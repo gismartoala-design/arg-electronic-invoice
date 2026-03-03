@@ -1,0 +1,13 @@
+{
+  "symbols.files.associations": {
+    "*.service.ts": "nest-service",
+    "*.controller.ts": "nest-controller",
+    "*.module.ts": "nest",
+    "*.decorator.ts": "nest-decorator",
+    "*.dto.ts": "nest-decorator",
+    "*.guard.ts": "nest-guard",
+    "*.filter.ts": "nest-guard",
+    "*.middleware.ts": "nest-middleware",
+    "*.interceptor.ts": "nest-middleware",
+  }
+}

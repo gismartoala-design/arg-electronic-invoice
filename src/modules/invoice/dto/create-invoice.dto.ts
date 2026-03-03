@@ -1,0 +1,198 @@
+import {
+  IsString,
+  IsNumber,
+  IsOptional,
+  Min,
+  MaxLength,
+  IsArray,
+  ValidateNested,
+  ArrayMinSize,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+export class InvoiceDetailTaxDto {
+  @ApiProperty({ description: 'Código del impuesto', example: '2' })
+  @IsString()
+  @MaxLength(2)
+  codigo: string;
+
+  @ApiProperty({ description: 'Código porcentaje', example: '4' })
+  @IsString()
+  @MaxLength(2)
+  codigoPorcentaje: string;
+
+  @ApiProperty({ description: 'Tarifa del impuesto', example: 15 })
+  @IsNumber()
+  @Min(0)
+  tarifa: number;
+
+  @ApiProperty({ description: 'Base imponible', example: 100 })
+  @IsNumber()
+  @Min(0)
+  baseImponible: number;
+
+  @ApiProperty({ description: 'Valor del impuesto', example: 15 })
+  @IsNumber()
+  @Min(0)
+  valor: number;
+}
+
+export class InvoiceDetailDto {
+  @ApiProperty({ description: 'Código principal del producto/servicio' })
+  @IsString()
+  @MaxLength(50)
+  codigoPrincipal: string;
+
+  @ApiPropertyOptional({ description: 'Código auxiliar' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  codigoAuxiliar?: string;
+
+  @ApiProperty({ description: 'Descripción del producto/servicio' })
+  @IsString()
+  @MaxLength(500)
+  descripcion: string;
+
+  @ApiProperty({ description: 'Cantidad', example: 1 })
+  @IsNumber()
+  @Min(0)
+  cantidad: number;
+
+  @ApiProperty({ description: 'Precio unitario', example: 100 })
+  @IsNumber()
+  @Min(0)
+  precioUnitario: number;
+
+  @ApiProperty({ description: 'Descuento', example: 0 })
+  @IsNumber()
+  @Min(0)
+  descuento: number;
+
+  @ApiProperty({ description: 'Precio total sin impuesto', example: 100 })
+  @IsNumber()
+  @Min(0)
+  precioTotalSinImpuesto: number;
+
+  @ApiPropertyOptional({ description: 'Detalles adicionales' })
+  @IsOptional()
+  detallesAdicionales?: Record<string, string>;
+
+  @ApiProperty({ description: 'Impuestos del detalle', type: [InvoiceDetailTaxDto] })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => InvoiceDetailTaxDto)
+  impuestos: InvoiceDetailTaxDto[];
+}
+
+export class InvoicePaymentDto {
+  @ApiProperty({ description: 'Forma de pago', example: '01' })
+  @IsString()
+  @MaxLength(2)
+  formaPago: string;
+
+  @ApiProperty({ description: 'Total', example: 115 })
+  @IsNumber()
+  @Min(0)
+  total: number;
+
+  @ApiPropertyOptional({ description: 'Plazo en días' })
+  @IsOptional()
+  @IsNumber()
+  plazo?: number;
+
+  @ApiPropertyOptional({ description: 'Unidad de tiempo' })
+  @IsOptional()
+  @IsString()
+  unidadTiempo?: string;
+}
+
+export class CreateInvoiceDto {
+  @ApiProperty({ description: 'ID del emisor (issuer)' })
+  @IsString()
+  issuerId: string;
+
+  @ApiProperty({ description: 'Fecha de emisión', example: '28/02/2026' })
+  @IsString()
+  fechaEmision: string;
+
+  @ApiProperty({ description: 'Tipo de identificación del cliente', example: '04' })
+  @IsString()
+  @MaxLength(2)
+  clienteTipoIdentificacion: string;
+
+  @ApiProperty({ description: 'Identificación del cliente' })
+  @IsString()
+  @MaxLength(20)
+  clienteIdentificacion: string;
+
+  @ApiProperty({ description: 'Razón social del cliente' })
+  @IsString()
+  @MaxLength(300)
+  clienteRazonSocial: string;
+
+  @ApiPropertyOptional({ description: 'Dirección del cliente' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  clienteDireccion?: string;
+
+  @ApiPropertyOptional({ description: 'Email del cliente' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  clienteEmail?: string;
+
+  @ApiPropertyOptional({ description: 'Teléfono del cliente' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  clienteTelefono?: string;
+
+  @ApiProperty({ description: 'Total sin impuestos', example: 100 })
+  @IsNumber()
+  @Min(0)
+  totalSinImpuestos: number;
+
+  @ApiPropertyOptional({ description: 'Total descuento', example: 0 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  totalDescuento?: number;
+
+  @ApiPropertyOptional({ description: 'Propina', example: 0 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  propina?: number;
+
+  @ApiProperty({ description: 'Importe total', example: 115 })
+  @IsNumber()
+  @Min(0)
+  importeTotal: number;
+
+  @ApiPropertyOptional({ description: 'Moneda', example: 'DOLAR' })
+  @IsOptional()
+  @IsString()
+  moneda?: string;
+
+  @ApiPropertyOptional({ description: 'Información adicional' })
+  @IsOptional()
+  infoAdicional?: Record<string, string>;
+
+  @ApiProperty({ description: 'Detalles de la factura', type: [InvoiceDetailDto] })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => InvoiceDetailDto)
+  detalles: InvoiceDetailDto[];
+
+  @ApiProperty({ description: 'Formas de pago', type: [InvoicePaymentDto] })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => InvoicePaymentDto)
+  pagos: InvoicePaymentDto[];
+}
