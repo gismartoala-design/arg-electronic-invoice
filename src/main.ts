@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import process from 'node:process';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -73,12 +74,21 @@ async function bootstrap() {
 
   // Start server
   const port = configService.get<number>('app.port') || 3000;
-  await app.listen(port);
 
-  console.log(`
-🚀 Application is running on: http://localhost:${port}/${apiPrefix}
-📚 Swagger documentation: http://localhost:${port}/${apiPrefix}/docs
+  try {
+    await app.listen(port, '0.0.0.0');
+    console.log(`
+🚀 Application is running on: http://0.0.0.0:${port}/${apiPrefix}
+📚 Swagger documentation: http://0.0.0.0:${port}/${apiPrefix}/docs
 🏢 Environment: ${configService.get<string>('app.nodeEnv')}
-  `);
+    `);
+  } catch (error) {
+    console.error('❌ Fatal error during application startup:', error);
+    process.exit(1);
+  }
 }
-bootstrap();
+
+bootstrap().catch((error) => {
+  console.error('❌ Bootstrap failed:', error);
+  process.exit(1);
+});

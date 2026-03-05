@@ -1,4 +1,4 @@
-import * as Joi from 'joi';
+import Joi from 'joi';
 
 export const validationSchema = Joi.object({
   // Application
@@ -7,39 +7,39 @@ export const validationSchema = Joi.object({
   API_PREFIX: Joi.string().default('api/v1'),
 
   // Database
-  DB_HOST: Joi.string().required(),
+  DB_HOST: Joi.string().default('localhost'),
   DB_PORT: Joi.number().default(5432),
-  DB_USERNAME: Joi.string().required(),
-  DB_PASSWORD: Joi.string().required(),
-  DB_DATABASE: Joi.string().required(),
+  DB_USERNAME: Joi.string().default('postgres'),
+  DB_PASSWORD: Joi.string().default('postgres'),
+  DB_DATABASE: Joi.string().default('electronic_invoice'),
   DB_SYNC: Joi.boolean().default(false),
 
   // SRI
-  SRI_WS_RECEPTION_URL: Joi.string().uri().required(),
-  SRI_WS_AUTHORIZATION_URL: Joi.string().uri().required(),
+  SRI_WS_RECEPTION_URL: Joi.string().uri().default('https://cel.sri.gob.ec/comprobantes-electronicos-ws/RecepcionComprobantesOffline?wsdl'),
+  SRI_WS_AUTHORIZATION_URL: Joi.string().uri().default('https://cel.sri.gob.ec/comprobantes-electronicos-ws/AutorizacionComprobantesOffline?wsdl'),
 
   // Digital Signature
-  SIGNATURE_PATH: Joi.string().required(),
-  SIGNATURE_PASSWORD: Joi.string().allow('').optional(),
+  SIGNATURE_PATH: Joi.string().default('./certificates/signature.p12'),
+  SIGNATURE_PASSWORD: Joi.string().allow('').default(''),
 
   // Company
-  COMPANY_RUC: Joi.string().length(13).required(),
-  COMPANY_NAME: Joi.string().required(),
-  COMPANY_TRADENAME: Joi.string().required(),
-  COMPANY_ADDRESS: Joi.string().required(),
-  COMPANY_EMAIL: Joi.string().email().required(),
-  COMPANY_PHONE: Joi.string().required(),
+  COMPANY_RUC: Joi.string().length(13).default('1234567890001'),
+  COMPANY_NAME: Joi.string().default('Empresa Demo'),
+  COMPANY_TRADENAME: Joi.string().default('Empresa Demo'),
+  COMPANY_ADDRESS: Joi.string().default('Dirección Demo'),
+  COMPANY_EMAIL: Joi.string().email().default('demo@example.com'),
+  COMPANY_PHONE: Joi.string().default('0999999999'),
 
   // Email
-  MAIL_HOST: Joi.string().required(),
+  MAIL_HOST: Joi.string().default('smtp.gmail.com'),
   MAIL_PORT: Joi.number().default(587),
   MAIL_SECURE: Joi.boolean().default(false),
   MAIL_USER: Joi.string().allow('').optional(),
   MAIL_PASSWORD: Joi.string().allow('').optional(),
-  MAIL_FROM: Joi.string().email().required(),
+  MAIL_FROM: Joi.string().email().default('demo@example.com'),
 
   // JWT
-  JWT_SECRET: Joi.string().required(),
+  JWT_SECRET: Joi.string().default('default_secret_key_change_me'),
   JWT_EXPIRATION: Joi.string().default('1d'),
 
   // Storage
