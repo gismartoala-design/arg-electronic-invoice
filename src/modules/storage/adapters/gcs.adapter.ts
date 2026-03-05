@@ -11,8 +11,14 @@ export class GcsStorageAdapter implements StorageAdapter {
   constructor(bucketName: string, keyFilePath?: string) {
     const config: any = {};
     
+    // Si se proporciona keyFilePath, usarlo (desarrollo local)
+    // Si no, usar Application Default Credentials (Cloud Run, GKE, etc)
     if (keyFilePath) {
+      this.logger.log(`Using GCS key file: ${keyFilePath}`);
       config.keyFilename = keyFilePath;
+    } else {
+      this.logger.log('Using Application Default Credentials (ADC)');
+      // No configurar nada, Storage SDK usará ADC automáticamente
     }
 
     this.storage = new Storage(config);
