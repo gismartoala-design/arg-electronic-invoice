@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { InvoiceService } from './invoice.service';
+import { ArtifactType } from './entities';
 import {
   CreateInvoiceDto,
   QueryInvoiceDto,
@@ -48,6 +49,27 @@ export class InvoiceController {
   @ApiResponse({ status: 404, description: 'Factura no encontrada' })
   findOne(@Param('id') id: string): Promise<InvoiceResponseDto> {
     return this.invoiceService.findOne(id);
+  }
+
+  @Get(':id/artifacts/:type')
+  @ApiOperation({ summary: 'Obtener un artefacto de la factura (XML, PDF, respuesta SRI)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Artefacto encontrado',
+    schema: {
+      type: 'object',
+      properties: {
+        content: { type: 'string', description: 'Contenido del artefacto (texto o base64 para PDFs)' },
+        mimeType: { type: 'string', description: 'Tipo MIME del contenido' },
+      },
+    },
+  })
+  @ApiResponse({ status: 404, description: 'Factura o artefacto no encontrado' })
+  getArtifact(
+    @Param('id') id: string,
+    @Param('type') type: ArtifactType,
+  ): Promise<{ content: string; mimeType: string }> {
+    return this.invoiceService.getArtifact(id, type);
   }
 
   @Post(':id/authorize')

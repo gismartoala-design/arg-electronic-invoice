@@ -195,6 +195,44 @@ export class InvoiceService {
   }
 
   /**
+   * Obtener un artefacto (XML, PDF, respuesta SRI) de una factura
+   */
+  async getArtifact(
+    invoiceId: string,
+    type: ArtifactType,
+  ): Promise<{ content: string; mimeType: string }> {
+    const artifact = await this.artifactRepository.findOne({
+      where: { invoiceId, type },
+    });
+
+    if (!artifact) {
+      throw new NotFoundException(
+        `Artefacto ${type} no encontrado para factura ${invoiceId}`,
+      );
+    }
+
+    let content: string;
+
+    if (artifact.content) {
+      // XML, JSON: est\u00e1 en la columna content de la DB
+      content = artifact.content;
+    } else if (artifact.storageKey) {
+      // PDF: est\u00e1 en Cloud Storage
+      const buffer = await this.storageService.get(artifact.storageKey);
+      content = buffer.toString('base64'); // Devolver PDF como base64
+    } else {
+      throw new InternalServerErrorException(
+        `Artefacto ${type} no tiene contenido ni storageKey`,
+      );
+    }
+
+    return {
+      content,
+      mimeType: artifact.mimeType,
+    };
+  }
+
+  /**
    * Firmar y enviar factura al SRI
    */
   async authorize(id: string): Promise<InvoiceResponseDto> {
@@ -242,8 +280,14 @@ export class InvoiceService {
       invoice.status = InvoiceStatus.PENDING_SIGNATURE;
       await this.invoiceRepository.save(invoice);
 
-      // Paso 3: Firmar XML
-      const xmlSigned = await this.signatureService.signXml(xmlUnsigned);
+      // Paso 3: Firmar XML usando certificado del issuer
+      // Si el issuer no tiene certificado configurado, se usarán los valores del .env
+      this.logger.log(`Firmando con certificado del issuer: ${invoice.issuer.certP12Path || 'usando configuración por defecto'}`);
+      const xmlSigned = await this.signatureService.signXml(
+        xmlUnsigned,
+        invoice.issuer.certP12Path,
+        invoice.issuer.certPasswordEncrypted,
+      );
       this.logger.debug('=== XML FIRMADO ===');
       this.logger.debug(xmlSigned);
       this.logger.debug('=== FIN XML FIRMADO ===');
@@ -550,21 +594,26 @@ export class InvoiceService {
   ): Promise<void> {
     const hash = crypto.createHash('sha256').update(content).digest('hex');
 
-    // Guardar en filesystem
-    const storageKey = await this.saveToStorage(invoiceId, type, content);
-
     const artifactData: any = {
       invoiceId,
       type,
-      storageKey,
       hashSha256: hash,
       mimeType,
       size: Buffer.byteLength(content, 'utf8'),
     };
 
-    // Solo guardar responses en DB
-    if (type.includes('RESPONSE')) {
+    // Lógica de almacenamiento:
+    // - XMLs y JSONs: guardar en DB (columna content)
+    // - PDFs: guardar en Cloud Storage (columna storageKey)
+    if (type === ArtifactType.RIDE_PDF) {
+      // PDF: usar Cloud Storage
+      const storageKey = await this.saveToStorage(invoiceId, type, content);
+      artifactData.storageKey = storageKey;
+      // No guardar content en DB para PDFs (son archivos binarios grandes)
+    } else {
+      // XML o JSON: guardar directamente en DB
       artifactData.content = content;
+      // No usar filesystem para XMLs/JSONs
     }
 
     const artifact = this.artifactRepository.create(artifactData);
@@ -573,18 +622,18 @@ export class InvoiceService {
   }
 
   /**
-   * Guardar en storage
+   * Guardar archivos binarios en Cloud Storage (solo PDFs)
    */
   private async saveToStorage(
     invoiceId: string,
     type: ArtifactType,
     content: string,
   ): Promise<string> {
-    const extension = type.includes('XML') ? 'xml' : 'json';
+    const extension = type === ArtifactType.RIDE_PDF ? 'pdf' : 'dat';
     const fileName = `${invoiceId}_${type}_${Date.now()}.${extension}`;
     const storageKey = `invoices/${invoiceId}/${fileName}`;
 
-    // Usar el nuevo StorageService (soporta local, GCS, etc)
+    // Usar StorageService (soporta local, GCS, etc)
     await this.storageService.save(storageKey, content);
 
     return storageKey;

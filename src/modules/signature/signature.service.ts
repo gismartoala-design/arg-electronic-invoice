@@ -7,6 +7,7 @@ import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import * as xadesjs from 'xadesjs';
 import { SignedXml } from 'xml-crypto';
 import * as xpath from 'xpath';
+import { StorageService } from '../storage/storage.service';
 
 const webcrypto = new Crypto();
 xadesjs.Application.setEngine('node', webcrypto);
@@ -22,7 +23,10 @@ export class SignatureService {
   private readonly signaturePath: string;
   private readonly signaturePassword: string;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly storageService: StorageService,
+  ) {
     this.signaturePath = this.configService.get<string>('signature.path') || '';
     this.signaturePassword =
       this.configService.get<string>('signature.password') || '';
@@ -30,11 +34,21 @@ export class SignatureService {
 
   /**
    * Firma XAdES-BES (enveloped) para SRI.
+   * @param xmlContent XML a firmar
+   * @param certificatePath Ruta del certificado (opcional, usa .env si no se pasa)
+   * @param certificatePassword Contraseña del certificado (opcional, usa .env si no se pasa)
    */
-  async signXml(xmlContent: string): Promise<string> {
+  async signXml(
+    xmlContent: string,
+    certificatePath?: string,
+    certificatePassword?: string,
+  ): Promise<string> {
     this.logger.log('Firmando XML con XAdES-BES (xadesjs)');
 
-    const { certPem, keyPem } = this.loadP12AsPem();
+    const { certPem, keyPem } = await this.loadP12AsPem(
+      certificatePath,
+      certificatePassword,
+    );
 
     const doc = new DOMParser().parseFromString(xmlContent, 'text/xml');
     const root = doc.documentElement;
@@ -204,36 +218,65 @@ export class SignatureService {
   //  Helpers: certificados / PEM
   // ==============================
 
-  private loadP12AsPem(): { certPem: string; keyPem: string } {
-    const { certificate, privateKey } = this.loadCertificateSync();
+  private async loadP12AsPem(
+    certPath?: string,
+    certPassword?: string,
+  ): Promise<{ certPem: string; keyPem: string }> {
+    const { certificate, privateKey } = await this.loadCertificateSync(
+      certPath,
+      certPassword,
+    );
     return {
       certPem: forge.pki.certificateToPem(certificate),
       keyPem: forge.pki.privateKeyToPem(privateKey),
     };
   }
 
-  private async loadCertificate(): Promise<{
+  private async loadCertificate(
+    certPath?: string,
+    certPassword?: string,
+  ): Promise<{
     privateKey: forge.pki.rsa.PrivateKey;
     certificate: forge.pki.Certificate;
   }> {
-    // no hay async real aquí, pero mantengo firma async por compatibilidad con tu código
-    return this.loadCertificateSync();
+    return this.loadCertificateSync(certPath, certPassword);
   }
 
-  private loadCertificateSync(): {
+  private async loadCertificateSync(
+    certPath?: string,
+    certPassword?: string,
+  ): Promise<{
     privateKey: forge.pki.rsa.PrivateKey;
     certificate: forge.pki.Certificate;
-  } {
-    if (!fs.existsSync(this.signaturePath)) {
-      throw new Error(`No se encontró el .p12 en: ${this.signaturePath}`);
+  }> {
+    // Usar parámetros o fallback a .env
+    const path = certPath || this.signaturePath;
+    const password = certPassword || this.signaturePassword;
+
+    if (!path) {
+      throw new Error('No se especificó ruta del certificado (ni por parámetro ni en .env)');
     }
 
-    const p12Buffer = fs.readFileSync(this.signaturePath);
+    // Cargar el archivo P12
+    let p12Buffer: Buffer;
+
+    if (path.startsWith('gs://')) {
+      // Ruta de Google Cloud Storage
+      this.logger.log(`Cargando certificado desde GCS: ${path}`);
+      p12Buffer = await this.storageService.get(path);
+    } else {
+      // Ruta del sistema de archivos local
+      if (!fs.existsSync(path)) {
+        throw new Error(`No se encontró el .p12 en: ${path}`);
+      }
+      p12Buffer = fs.readFileSync(path);
+    }
+
     const p12Asn1 = forge.asn1.fromDer(p12Buffer.toString('binary'));
     const p12 = forge.pkcs12.pkcs12FromAsn1(
       p12Asn1,
       false,
-      this.signaturePassword,
+      password,
     );
 
     // Obtener certificados de forma segura
