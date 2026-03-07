@@ -62,5 +62,7 @@ certificates/*
 # Storage files (keep folder structure but ignore generated files)
 storage/xml/*
 storage/pdf/*
+storage/certificates/*
 !storage/xml/.gitkeep
 !storage/pdf/.gitkeep
+!storage/certificates/.gitkeep

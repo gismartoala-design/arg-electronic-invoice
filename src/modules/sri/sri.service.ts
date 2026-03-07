@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { XMLParser } from 'fast-xml-parser';
+import * as https from 'https';
 
 @Injectable()
 export class SriService {
@@ -11,6 +12,7 @@ export class SriService {
   private readonly authorizationUrl: string;
   private readonly xmlParser: XMLParser;
   private readonly useMock: boolean;
+  private readonly httpsAgent: https.Agent;
 
   constructor(
     private readonly configService: ConfigService,
@@ -20,6 +22,13 @@ export class SriService {
     this.authorizationUrl = this.configService.get<string>('sri.authorizationUrl') || '';
     this.useMock = this.configService.get<string>('app.nodeEnv') === 'development';
     
+    // Configurar agente HTTPS para evitar problemas de conexión (ECONNRESET)
+    this.httpsAgent = new https.Agent({
+      rejectUnauthorized: false, // Permisivo con certificados
+      keepAlive: false, // No mantener conexiones vivas
+      family: 4, // Forzar IPv4
+    });
+
     // Configurar parser XML para respuestas SOAP
     this.xmlParser = new XMLParser({
       ignoreAttributes: false,
@@ -54,8 +63,11 @@ export class SriService {
           headers: {
             'Content-Type': 'text/xml; charset=utf-8',
             'SOAPAction': '',
+            'Connection': 'close',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
           },
-          timeout: 30000, // 30 segundos
+          timeout: 60000, // 60 segundos
+          httpsAgent: this.httpsAgent,
         }),
       );
 
@@ -102,8 +114,11 @@ export class SriService {
           headers: {
             'Content-Type': 'text/xml; charset=utf-8',
             'SOAPAction': '',
+            'Connection': 'close',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
           },
-          timeout: 30000, // 30 segundos
+          timeout: 60000, // 60 segundos
+          httpsAgent: this.httpsAgent,
         }),
       );
 
@@ -382,6 +397,11 @@ export class SriService {
         const response = await firstValueFrom(
           this.httpService.get(this.receptionUrl.replace('?wsdl', ''), {
             timeout: 5000,
+            headers: {
+              'Connection': 'close',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            },
+            httpsAgent: this.httpsAgent,
           }),
         );
         result.reception = response.status === 200;
@@ -400,6 +420,11 @@ export class SriService {
         const response = await firstValueFrom(
           this.httpService.get(this.authorizationUrl.replace('?wsdl', ''), {
             timeout: 5000,
+            headers: {
+              'Connection': 'close',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            },
+            httpsAgent: this.httpsAgent,
           }),
         );
         result.authorization = response.status === 200;
