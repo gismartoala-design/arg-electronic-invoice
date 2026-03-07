@@ -78,14 +78,25 @@ export class SriService {
       
       return parsedResponse;
     } catch (error) {
-      this.logger.error(`Error al enviar a recepción SRI: ${error.message}`);
-      
-      // Si es error de red/timeout, reintentar con mock
+      // Manejo de errores de conexión (Retry con Mock)
       if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
-        this.logger.warn('Error de conexión, usando respuesta MOCK');
+        this.logger.warn(`Error de conexión (${error.code}), usando respuesta MOCK`);
         return this.getMockReceptionResponse(data.claveAcceso);
       }
-      
+
+      // Intentar extraer error específico del SRI (SOAP Fault)
+      const fault = this.extractSoapFault(error);
+      if (fault) {
+        this.logger.error(`🔥 SRI FAULT: ${fault}`);
+        
+        if (fault.includes('GenericJDBCException') || fault.includes('Could not open connection')) {
+          throw new Error('SRI INTERNO CAÍDO: Problema interno del servidor.');
+        }
+        
+        throw new Error(`SRI RECHAZÓ LA SOLICITUD: ${fault}`);
+      }
+
+      this.logger.error(`Error al enviar a recepción SRI: ${error.message}`);
       throw new Error(`Error en servicio de recepción del SRI: ${error.message}`);
     }
   }
@@ -129,14 +140,25 @@ export class SriService {
       
       return parsedResponse;
     } catch (error) {
-      this.logger.error(`Error al consultar autorización SRI: ${error.message}`);
-      
-      // Si es error de red/timeout, reintentar con mock
+      // Manejo de errores de conexión (Retry con Mock)
       if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
-        this.logger.warn('Error de conexión, usando respuesta MOCK');
+        this.logger.warn(`Error de conexión (${error.code}), usando respuesta MOCK`);
         return this.getMockAuthorizationResponse(claveAcceso);
       }
-      
+
+      // Intentar extraer error específico del SRI (SOAP Fault)
+      const fault = this.extractSoapFault(error);
+      if (fault) {
+        this.logger.error(`🔥 SRI FAULT: ${fault}`);
+
+        if (fault.includes('GenericJDBCException') || fault.includes('Could not open connection')) {
+          throw new Error('SRI INTERNO CAÍDO: problema interno del servidor.');
+        }
+
+        throw new Error(`SRI RECHAZÓ AUTORIZACIÓN: ${fault}`);
+      }
+
+      this.logger.error(`Error al consultar autorización SRI: ${error.message}`);
       throw new Error(`Error en servicio de autorización del SRI: ${error.message}`);
     }
   }
@@ -324,6 +346,21 @@ export class SriService {
       informacionAdicional: msg.informacionAdicional || '',
       tipo: msg.tipo || 'ERROR',
     }));
+  }
+
+  /**
+   * Extraer mensaje de error SOAP (faultstring) de la respuesta
+   */
+  private extractSoapFault(error: any): string | null {
+    if (!error.response || !error.response.data) return null;
+    
+    const data = error.response.data;
+    const dataStr = typeof data === 'object' ? JSON.stringify(data) : String(data);
+    
+    const faultMatch = dataStr.match(/<(\w+:)?faultstring>(.*?)<\/\1?faultstring>/) || 
+                       dataStr.match(/<faultstring>(.*?)<\/faultstring>/);
+                       
+    return faultMatch ? (faultMatch[2] || faultMatch[1]) : null;
   }
 
   /**
