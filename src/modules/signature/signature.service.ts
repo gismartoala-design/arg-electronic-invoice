@@ -253,6 +253,14 @@ export class SignatureService {
     const path = certPath || this.signaturePath;
     const password = certPassword || this.signaturePassword;
 
+    this.logger.log('=== DEBUG LOAD CERTIFICATE ===');
+    this.logger.log(`certPath recibido: ${certPath}`);
+    this.logger.log(`certPath type: ${typeof certPath}`);
+    this.logger.log(`certPath length: ${certPath?.length || 0}`);
+    this.logger.log(`path final a usar: ${path}`);
+    this.logger.log(`signaturePath (.env): ${this.signaturePath}`);
+    this.logger.log('=== FIN DEBUG ===');
+
     if (!path) {
       throw new Error('No se especificó ruta del certificado (ni por parámetro ni en .env)');
     }

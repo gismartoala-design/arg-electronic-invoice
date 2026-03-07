@@ -282,7 +282,15 @@ export class InvoiceService {
 
       // Paso 3: Firmar XML usando certificado del issuer
       // Si el issuer no tiene certificado configurado, se usarán los valores del .env
-      this.logger.log(`Firmando con certificado del issuer: ${invoice.issuer.certP12Path || 'usando configuración por defecto'}`);
+      this.logger.log('=== INFORMACIÓN DEL CERTIFICADO ===');
+      this.logger.log(`Issuer RUC: ${invoice.issuer.ruc}`);
+      this.logger.log(`Issuer Razón Social: ${invoice.issuer.razonSocial}`);
+      this.logger.log(`certP12Path: ${invoice.issuer.certP12Path}`);
+      this.logger.log(`certP12Path type: ${typeof invoice.issuer.certP12Path}`);
+      this.logger.log(`certP12Path length: ${invoice.issuer.certP12Path?.length || 0}`);
+      this.logger.log(`Password presente: ${!!invoice.issuer.certPasswordEncrypted}`);
+      this.logger.log('=== FIN INFORMACIÓN DEL CERTIFICADO ===');
+      
       const xmlSigned = await this.signatureService.signXml(
         xmlUnsigned,
         invoice.issuer.certP12Path,
