@@ -3,6 +3,17 @@ FROM node:24-alpine AS builder
 
 WORKDIR /app
 
+# Instalar dependencias del sistema necesarias para compilar módulos nativos (canvas)
+RUN apk add --no-cache \
+    python3 \
+    make \
+    g++ \
+    cairo-dev \
+    pango-dev \
+    jpeg-dev \
+    giflib-dev \
+    librsvg-dev
+
 # Copiar archivos de dependencias
 COPY package*.json ./
 COPY tsconfig*.json ./
@@ -22,8 +33,25 @@ RUN npm prune --production
 # Etapa 2: Production
 FROM node:24-alpine
 
-# Instalar dumb-init para manejo correcto de señales
-RUN apk add --no-cache dumb-init
+# Instalar dependencias de runtime para canvas y dumb-init
+RUN apk add --no-cache \
+    dumb-init \
+    cairo \
+    pango \
+    jpeg \
+    giflib \
+    librsvg \
+    # Dependencias de Puppeteer/Chromium para Alpine
+    chromium \
+    nss \
+    freetype \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont
+
+# Configurar Puppeteer para que no descargue Chromium y use el del sistema
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 # Crear usuario no-root
 RUN addgroup -g 1001 -S nodejs && \
