@@ -54,7 +54,9 @@ export class SignatureController {
     description: 'Resultado de verificación',
   })
   async verifySignature(@Body() body: { signedXml: string }) {
-    const isValid = await this.signatureService.verifyXmlSignature(body.signedXml);
+    const isValid = await this.signatureService.verifyXmlSignature(
+      body.signedXml,
+    );
     return {
       isValid,
       message: isValid ? 'Firma válida' : 'Firma inválida',

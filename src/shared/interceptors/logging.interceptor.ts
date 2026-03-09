@@ -17,7 +17,9 @@ export class LoggingInterceptor implements NestInterceptor {
     const { method, url, body } = request;
     const now = Date.now();
 
-    this.logger.log(`[Request] ${method} ${url} - Body: ${JSON.stringify(body)}`);
+    this.logger.log(
+      `[Request] ${method} ${url} - Body: ${JSON.stringify(body)}`,
+    );
 
     return next.handle().pipe(
       tap({

@@ -1,7 +1,17 @@
-import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Query,
+  Res,
+  StreamableFile,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { InvoiceService } from './invoice.service';
 import { ArtifactType } from './entities';
+import type { Response } from 'express';
 import {
   CreateInvoiceDto,
   QueryInvoiceDto,
@@ -23,7 +33,9 @@ export class InvoiceController {
   })
   @ApiResponse({ status: 400, description: 'Datos inválidos' })
   @ApiResponse({ status: 404, description: 'Emisor no encontrado' })
-  create(@Body() createInvoiceDto: CreateInvoiceDto): Promise<InvoiceResponseDto> {
+  create(
+    @Body() createInvoiceDto: CreateInvoiceDto,
+  ): Promise<InvoiceResponseDto> {
     return this.invoiceService.create(createInvoiceDto);
   }
 
@@ -35,7 +47,9 @@ export class InvoiceController {
     type: PaginatedInvoiceResponseDto,
   })
   @ApiQuery({ type: QueryInvoiceDto })
-  findAll(@Query() query: QueryInvoiceDto): Promise<PaginatedInvoiceResponseDto> {
+  findAll(
+    @Query() query: QueryInvoiceDto,
+  ): Promise<PaginatedInvoiceResponseDto> {
     return this.invoiceService.findAll(query);
   }
 
@@ -52,24 +66,37 @@ export class InvoiceController {
   }
 
   @Get(':id/artifacts/:type')
-  @ApiOperation({ summary: 'Obtener un artefacto de la factura (XML, PDF, respuesta SRI)' })
+  @ApiOperation({
+    summary:
+      'Obtener un artefacto de la factura (XML, PDF, respuesta SRI) como archivo',
+  })
   @ApiResponse({
     status: 200,
-    description: 'Artefacto encontrado',
-    schema: {
-      type: 'object',
-      properties: {
-        content: { type: 'string', description: 'Contenido del artefacto (texto o base64 para PDFs)' },
-        mimeType: { type: 'string', description: 'Tipo MIME del contenido' },
-      },
+    description: 'Archivo descargado exitosamente',
+    content: {
+      'application/pdf': { schema: { type: 'string', format: 'binary' } },
+      'application/xml': { schema: { type: 'string', format: 'binary' } },
+      'application/json': { schema: { type: 'string', format: 'binary' } },
     },
   })
-  @ApiResponse({ status: 404, description: 'Factura o artefacto no encontrado' })
-  getArtifact(
+  @ApiResponse({
+    status: 404,
+    description: 'Factura o artefacto no encontrado',
+  })
+  async getArtifact(
     @Param('id') id: string,
     @Param('type') type: ArtifactType,
-  ): Promise<{ content: string; mimeType: string }> {
-    return this.invoiceService.getArtifact(id, type);
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const { buffer, mimeType, filename } =
+      await this.invoiceService.getArtifact(id, type);
+
+    res.set({
+      'Content-Type': mimeType,
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    });
+
+    return new StreamableFile(buffer);
   }
 
   @Post(':id/authorize')

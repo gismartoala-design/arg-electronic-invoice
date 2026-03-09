@@ -21,7 +21,11 @@ export class LocalStorageAdapter implements StorageAdapter {
     }
   }
 
-  async save(key: string, content: Buffer | string, mimeType?: string): Promise<string> {
+  async save(
+    key: string,
+    content: Buffer | string,
+    mimeType?: string,
+  ): Promise<string> {
     try {
       const filePath = path.join(this.basePath, key);
       const directory = path.dirname(filePath);
@@ -72,7 +76,10 @@ export class LocalStorageAdapter implements StorageAdapter {
     }
   }
 
-  async getSignedUrl(key: string, expiresInMinutes: number = 60): Promise<string> {
+  async getSignedUrl(
+    key: string,
+    expiresInMinutes: number = 60,
+  ): Promise<string> {
     // En local, retornamos una URL del servidor
     // En producción, esto debería ser manejado por un endpoint
     return `/api/v1/storage/local/${key}`;
@@ -84,9 +91,11 @@ export class LocalStorageAdapter implements StorageAdapter {
       const files = await fs.readdir(dirPath, { recursive: true });
       return files
         .filter((file) => typeof file === 'string')
-        .map((file) => path.join(prefix, file as string));
+        .map((file) => path.join(prefix, file));
     } catch (error) {
-      this.logger.error(`Error listing files with prefix ${prefix}: ${error.message}`);
+      this.logger.error(
+        `Error listing files with prefix ${prefix}: ${error.message}`,
+      );
       return [];
     }
   }

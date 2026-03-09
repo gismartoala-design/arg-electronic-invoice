@@ -48,16 +48,19 @@ export default () => ({
     xmlPath: process.env.XML_PATH || './storage/xml',
     pdfPath: process.env.PDF_PATH || './storage/pdf',
     maxFileSize: parseInt(process.env.MAX_FILE_SIZE || '5242880', 10),
-    allowedFileTypes: process.env.ALLOWED_FILE_TYPES?.split(',') || ['.p12', '.pfx'],
-    
+    allowedFileTypes: process.env.ALLOWED_FILE_TYPES?.split(',') || [
+      '.p12',
+      '.pfx',
+    ],
+
     // Nueva configuración de storage multi-provider
     provider: process.env.STORAGE_PROVIDER || 'local', // 'local' | 'gcs' | 's3' | 'postgresql'
     localPath: process.env.STORAGE_LOCAL_PATH || './storage',
-    
+
     // Google Cloud Storage
     gcsBucket: process.env.GCS_BUCKET,
     gcsKeyFilePath: process.env.GCS_KEY_FILE_PATH,
-    
+
     // AWS S3 (futuro)
     s3Bucket: process.env.S3_BUCKET,
     s3Region: process.env.S3_REGION,

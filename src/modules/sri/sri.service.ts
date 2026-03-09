@@ -18,10 +18,13 @@ export class SriService {
     private readonly configService: ConfigService,
     private readonly httpService: HttpService,
   ) {
-    this.receptionUrl = this.configService.get<string>('sri.receptionUrl') || '';
-    this.authorizationUrl = this.configService.get<string>('sri.authorizationUrl') || '';
-    this.useMock = this.configService.get<string>('app.nodeEnv') === 'development';
-    
+    this.receptionUrl =
+      this.configService.get<string>('sri.receptionUrl') || '';
+    this.authorizationUrl =
+      this.configService.get<string>('sri.authorizationUrl') || '';
+    this.useMock =
+      this.configService.get<string>('app.nodeEnv') === 'development';
+
     // Configurar agente HTTPS para evitar problemas de conexión (ECONNRESET)
     this.httpsAgent = new https.Agent({
       rejectUnauthorized: false, // Permisivo con certificados
@@ -42,8 +45,13 @@ export class SriService {
   /**
    * Enviar comprobante al servicio de recepción del SRI
    */
-  async sendToReception(data: { claveAcceso: string; xml: string }): Promise<any> {
-    this.logger.log(`Enviando comprobante a recepción SRI: ${data.claveAcceso}`);
+  async sendToReception(data: {
+    claveAcceso: string;
+    xml: string;
+  }): Promise<any> {
+    this.logger.log(
+      `Enviando comprobante a recepción SRI: ${data.claveAcceso}`,
+    );
 
     // Si está en modo desarrollo sin URL del SRI, usar mock
     // if (!this.receptionUrl || this.useMock) {
@@ -62,9 +70,10 @@ export class SriService {
         this.httpService.post(this.receptionUrl, soapEnvelope, {
           headers: {
             'Content-Type': 'text/xml; charset=utf-8',
-            'SOAPAction': '',
-            'Connection': 'close',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            SOAPAction: '',
+            Connection: 'close',
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
           },
           timeout: 60000, // 60 segundos
           httpsAgent: this.httpsAgent,
@@ -73,14 +82,16 @@ export class SriService {
 
       // Parsear respuesta SOAP
       const parsedResponse = this.parseReceptionResponse(response.data);
-      
+
       this.logger.log(`Respuesta de recepción: ${parsedResponse.estado}`);
-      
+
       return parsedResponse;
     } catch (error) {
       // Manejo de errores de conexión (Retry con Mock)
       if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
-        this.logger.warn(`Error de conexión (${error.code}), usando respuesta MOCK`);
+        this.logger.warn(
+          `Error de conexión (${error.code}), usando respuesta MOCK`,
+        );
         return this.getMockReceptionResponse(data.claveAcceso);
       }
 
@@ -88,16 +99,21 @@ export class SriService {
       const fault = this.extractSoapFault(error);
       if (fault) {
         this.logger.error(`🔥 SRI FAULT: ${fault}`);
-        
-        if (fault.includes('GenericJDBCException') || fault.includes('Could not open connection')) {
+
+        if (
+          fault.includes('GenericJDBCException') ||
+          fault.includes('Could not open connection')
+        ) {
           throw new Error('SRI INTERNO CAÍDO: Problema interno del servidor.');
         }
-        
+
         throw new Error(`SRI RECHAZÓ LA SOLICITUD: ${fault}`);
       }
 
       this.logger.error(`Error al enviar a recepción SRI: ${error.message}`);
-      throw new Error(`Error en servicio de recepción del SRI: ${error.message}`);
+      throw new Error(
+        `Error en servicio de recepción del SRI: ${error.message}`,
+      );
     }
   }
 
@@ -124,9 +140,10 @@ export class SriService {
         this.httpService.post(this.authorizationUrl, soapEnvelope, {
           headers: {
             'Content-Type': 'text/xml; charset=utf-8',
-            'SOAPAction': '',
-            'Connection': 'close',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            SOAPAction: '',
+            Connection: 'close',
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
           },
           timeout: 60000, // 60 segundos
           httpsAgent: this.httpsAgent,
@@ -135,14 +152,16 @@ export class SriService {
 
       // Parsear respuesta SOAP
       const parsedResponse = this.parseAuthorizationResponse(response.data);
-      
+
       this.logger.log(`Estado de autorización: ${parsedResponse.estado}`);
-      
+
       return parsedResponse;
     } catch (error) {
       // Manejo de errores de conexión (Retry con Mock)
       if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
-        this.logger.warn(`Error de conexión (${error.code}), usando respuesta MOCK`);
+        this.logger.warn(
+          `Error de conexión (${error.code}), usando respuesta MOCK`,
+        );
         return this.getMockAuthorizationResponse(claveAcceso);
       }
 
@@ -151,15 +170,22 @@ export class SriService {
       if (fault) {
         this.logger.error(`🔥 SRI FAULT: ${fault}`);
 
-        if (fault.includes('GenericJDBCException') || fault.includes('Could not open connection')) {
+        if (
+          fault.includes('GenericJDBCException') ||
+          fault.includes('Could not open connection')
+        ) {
           throw new Error('SRI INTERNO CAÍDO: problema interno del servidor.');
         }
 
         throw new Error(`SRI RECHAZÓ AUTORIZACIÓN: ${fault}`);
       }
 
-      this.logger.error(`Error al consultar autorización SRI: ${error.message}`);
-      throw new Error(`Error en servicio de autorización del SRI: ${error.message}`);
+      this.logger.error(
+        `Error al consultar autorización SRI: ${error.message}`,
+      );
+      throw new Error(
+        `Error en servicio de autorización del SRI: ${error.message}`,
+      );
     }
   }
 
@@ -176,8 +202,10 @@ export class SriService {
     const xmlWithDeclaration = xml.trimStart().startsWith('<?xml')
       ? xml
       : `<?xml version="1.0" encoding="UTF-8"?>\n${xml}`;
-    const xmlBase64 = Buffer.from(xmlWithDeclaration, 'utf8').toString('base64');
-    
+    const xmlBase64 = Buffer.from(xmlWithDeclaration, 'utf8').toString(
+      'base64',
+    );
+
     return `<?xml version="1.0" encoding="UTF-8"?>
 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ec="http://ec.gob.sri.ws.recepcion">
   <soap:Header/>
@@ -210,10 +238,10 @@ export class SriService {
   private parseReceptionResponse(soapResponse: string): any {
     try {
       const parsed = this.xmlParser.parse(soapResponse);
-      
+
       // Navegar la estructura SOAP
-      const soapBody = 
-        parsed['soap:Envelope']?.['soap:Body'] || 
+      const soapBody =
+        parsed['soap:Envelope']?.['soap:Body'] ||
         parsed['soapenv:Envelope']?.['soapenv:Body'] ||
         parsed.Envelope?.Body;
 
@@ -222,8 +250,8 @@ export class SriService {
       }
 
       // Extraer respuesta de validación
-      const validarResponse = 
-        soapBody['ns2:validarComprobanteResponse'] || 
+      const validarResponse =
+        soapBody['ns2:validarComprobanteResponse'] ||
         soapBody['ns1:validarComprobanteResponse'] ||
         soapBody.validarComprobanteResponse;
 
@@ -243,7 +271,9 @@ export class SriService {
         comprobantes: this.normalizeComprobantes(respuesta.comprobantes),
       };
     } catch (error) {
-      this.logger.error(`Error al parsear respuesta de recepción: ${error.message}`);
+      this.logger.error(
+        `Error al parsear respuesta de recepción: ${error.message}`,
+      );
       throw new Error(`Error al parsear respuesta del SRI: ${error.message}`);
     }
   }
@@ -254,10 +284,10 @@ export class SriService {
   private parseAuthorizationResponse(soapResponse: string): any {
     try {
       const parsed = this.xmlParser.parse(soapResponse);
-      
+
       // Navegar la estructura SOAP
-      const soapBody = 
-        parsed['soap:Envelope']?.['soap:Body'] || 
+      const soapBody =
+        parsed['soap:Envelope']?.['soap:Body'] ||
         parsed['soapenv:Envelope']?.['soapenv:Body'] ||
         parsed.Envelope?.Body;
 
@@ -266,8 +296,8 @@ export class SriService {
       }
 
       // Extraer respuesta de autorización
-      const autorizacionResponse = 
-        soapBody['ns2:autorizacionComprobanteResponse'] || 
+      const autorizacionResponse =
+        soapBody['ns2:autorizacionComprobanteResponse'] ||
         soapBody['ns1:autorizacionComprobanteResponse'] ||
         soapBody.autorizacionComprobanteResponse;
 
@@ -305,7 +335,9 @@ export class SriService {
         mensajes: this.normalizeMensajes(autorizacion.mensajes),
       };
     } catch (error) {
-      this.logger.error(`Error al parsear respuesta de autorización: ${error.message}`);
+      this.logger.error(
+        `Error al parsear respuesta de autorización: ${error.message}`,
+      );
       throw new Error(`Error al parsear respuesta del SRI: ${error.message}`);
     }
   }
@@ -353,14 +385,16 @@ export class SriService {
    */
   private extractSoapFault(error: any): string | null {
     if (!error.response || !error.response.data) return null;
-    
+
     const data = error.response.data;
-    const dataStr = typeof data === 'object' ? JSON.stringify(data) : String(data);
-    
-    const faultMatch = dataStr.match(/<(\w+:)?faultstring>(.*?)<\/\1?faultstring>/) || 
-                       dataStr.match(/<faultstring>(.*?)<\/faultstring>/);
-                       
-    return faultMatch ? (faultMatch[2] || faultMatch[1]) : null;
+    const dataStr =
+      typeof data === 'object' ? JSON.stringify(data) : String(data);
+
+    const faultMatch =
+      dataStr.match(/<(\w+:)?faultstring>(.*?)<\/\1?faultstring>/) ||
+      dataStr.match(/<faultstring>(.*?)<\/faultstring>/);
+
+    return faultMatch ? faultMatch[2] || faultMatch[1] : null;
   }
 
   /**
@@ -390,7 +424,9 @@ export class SriService {
   /**
    * Obtener respuesta mock para autorización (desarrollo)
    */
-  private async getMockAuthorizationResponse(claveAcceso: string): Promise<any> {
+  private async getMockAuthorizationResponse(
+    claveAcceso: string,
+  ): Promise<any> {
     await this.simulateDelay(2000);
 
     const fechaAutorizacion = new Date().toISOString();
@@ -435,8 +471,9 @@ export class SriService {
           this.httpService.get(this.receptionUrl.replace('?wsdl', ''), {
             timeout: 5000,
             headers: {
-              'Connection': 'close',
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+              Connection: 'close',
+              'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
             },
             httpsAgent: this.httpsAgent,
           }),
@@ -458,8 +495,9 @@ export class SriService {
           this.httpService.get(this.authorizationUrl.replace('?wsdl', ''), {
             timeout: 5000,
             headers: {
-              'Connection': 'close',
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+              Connection: 'close',
+              'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
             },
             httpsAgent: this.httpsAgent,
           }),

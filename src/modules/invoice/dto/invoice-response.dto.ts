@@ -1,5 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { InvoiceStatus, SriReceptionStatus, SriAuthorizationStatus } from '../entities/enums';
+import {
+  InvoiceStatus,
+  SriReceptionStatus,
+  SriAuthorizationStatus,
+} from '../entities/enums';
 
 export class InvoiceResponseDto {
   @ApiProperty()

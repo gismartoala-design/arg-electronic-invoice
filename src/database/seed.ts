@@ -24,7 +24,8 @@ export async function seedDatabase(dataSource: DataSource) {
     ambiente: AmbienteType.PRUEBAS,
     establecimiento: '001',
     puntoEmision: '001',
-    certP12Path: './certificates/MARIA SOL ANDRADE VELASQUEZ 0956540116-250226123819.p12',
+    certP12Path:
+      './certificates/MARIA SOL ANDRADE VELASQUEZ 0956540116-250226123819.p12',
     certPasswordEncrypted: 'Mar1asol2026.',
     obligadoContabilidad: false,
     email: 'sola91140@gmail.com',

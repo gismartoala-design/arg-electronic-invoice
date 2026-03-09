@@ -2,7 +2,9 @@ import Joi from 'joi';
 
 export const validationSchema = Joi.object({
   // Application
-  NODE_ENV: Joi.string().valid('development', 'production', 'test').default('development'),
+  NODE_ENV: Joi.string()
+    .valid('development', 'production', 'test')
+    .default('development'),
   PORT: Joi.number().default(3000),
   API_PREFIX: Joi.string().default('api/v1'),
 
@@ -15,8 +17,16 @@ export const validationSchema = Joi.object({
   DB_SYNC: Joi.boolean().default(false),
 
   // SRI
-  SRI_WS_RECEPTION_URL: Joi.string().uri().default('https://cel.sri.gob.ec/comprobantes-electronicos-ws/RecepcionComprobantesOffline?wsdl'),
-  SRI_WS_AUTHORIZATION_URL: Joi.string().uri().default('https://cel.sri.gob.ec/comprobantes-electronicos-ws/AutorizacionComprobantesOffline?wsdl'),
+  SRI_WS_RECEPTION_URL: Joi.string()
+    .uri()
+    .default(
+      'https://cel.sri.gob.ec/comprobantes-electronicos-ws/RecepcionComprobantesOffline?wsdl',
+    ),
+  SRI_WS_AUTHORIZATION_URL: Joi.string()
+    .uri()
+    .default(
+      'https://cel.sri.gob.ec/comprobantes-electronicos-ws/AutorizacionComprobantesOffline?wsdl',
+    ),
 
   // Digital Signature
   SIGNATURE_PATH: Joi.string().default('./certificates/signature.p12'),
@@ -50,5 +60,7 @@ export const validationSchema = Joi.object({
   ALLOWED_FILE_TYPES: Joi.string().default('.p12,.pfx'),
 
   // Logging
-  LOG_LEVEL: Joi.string().valid('error', 'warn', 'info', 'debug').default('info'),
+  LOG_LEVEL: Joi.string()
+    .valid('error', 'warn', 'info', 'debug')
+    .default('info'),
 });

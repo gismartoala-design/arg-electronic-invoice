@@ -49,7 +49,9 @@ export class XmlBuilderService {
         cantidad: this.formatDecimal(detalle.cantidad),
         precioUnitario: this.formatDecimal(detalle.precioUnitario),
         descuento: this.formatDecimal(detalle.descuento),
-        precioTotalSinImpuesto: this.formatDecimal(detalle.precioTotalSinImpuesto),
+        precioTotalSinImpuesto: this.formatDecimal(
+          detalle.precioTotalSinImpuesto,
+        ),
       };
 
       // TODO: Evaluar si se necesita incluir códigoAuxiliar en el XML, ya que no es un campo obligatorio en la estructura del SRI
@@ -60,7 +62,10 @@ export class XmlBuilderService {
       detalleObj.impuestos = { impuesto: impuestos };
 
       // Detalles adicionales (UN SOLO nodo <detallesAdicionales> con múltiples <detAdicional>)
-      if (detalle.detallesAdicionales && Object.keys(detalle.detallesAdicionales).length > 0) {
+      if (
+        detalle.detallesAdicionales &&
+        Object.keys(detalle.detallesAdicionales).length > 0
+      ) {
         detalleObj.detallesAdicionales = {
           detAdicional: Object.entries(detalle.detallesAdicionales).map(
             ([nombre, valor]) => ({
@@ -93,10 +98,12 @@ export class XmlBuilderService {
     let infoAdicionalXml: any = null;
     if (infoAdicional && Object.keys(infoAdicional).length > 0) {
       infoAdicionalXml = {
-        campoAdicional: Object.entries(infoAdicional).map(([nombre, valor]) => ({
-          '@_nombre': nombre,
-          '#text': valor,
-        })),
+        campoAdicional: Object.entries(infoAdicional).map(
+          ([nombre, valor]) => ({
+            '@_nombre': nombre,
+            '#text': valor,
+          }),
+        ),
       };
     }
 

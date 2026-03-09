@@ -1,6 +1,10 @@
 import { IsOptional, IsEnum, IsNumber, IsString } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { InvoiceStatus, SriReceptionStatus, SriAuthorizationStatus } from '../entities/enums';
+import {
+  InvoiceStatus,
+  SriReceptionStatus,
+  SriAuthorizationStatus,
+} from '../entities/enums';
 
 export class QueryInvoiceDto {
   @ApiPropertyOptional({ description: 'Emisor ID' })
@@ -8,17 +12,26 @@ export class QueryInvoiceDto {
   @IsString()
   issuerId?: string;
 
-  @ApiPropertyOptional({ description: 'Estado de la factura', enum: InvoiceStatus })
+  @ApiPropertyOptional({
+    description: 'Estado de la factura',
+    enum: InvoiceStatus,
+  })
   @IsOptional()
   @IsEnum(InvoiceStatus)
   status?: InvoiceStatus;
 
-  @ApiPropertyOptional({ description: 'Estado de recepción SRI', enum: SriReceptionStatus })
+  @ApiPropertyOptional({
+    description: 'Estado de recepción SRI',
+    enum: SriReceptionStatus,
+  })
   @IsOptional()
   @IsEnum(SriReceptionStatus)
   sriReceptionStatus?: SriReceptionStatus;
 
-  @ApiPropertyOptional({ description: 'Estado de autorización SRI', enum: SriAuthorizationStatus })
+  @ApiPropertyOptional({
+    description: 'Estado de autorización SRI',
+    enum: SriAuthorizationStatus,
+  })
   @IsOptional()
   @IsEnum(SriAuthorizationStatus)
   sriAuthorizationStatus?: SriAuthorizationStatus;
@@ -43,7 +56,11 @@ export class QueryInvoiceDto {
   @IsNumber()
   page?: number = 1;
 
-  @ApiPropertyOptional({ description: 'Límite por página', example: 10, default: 10 })
+  @ApiPropertyOptional({
+    description: 'Límite por página',
+    example: 10,
+    default: 10,
+  })
   @IsOptional()
   @IsNumber()
   limit?: number = 10;

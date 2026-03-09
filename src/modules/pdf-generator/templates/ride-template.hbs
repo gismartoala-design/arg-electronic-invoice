@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Factura Electrónica</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      font-size: 10px;
+      margin: 20px;
+    }
+    .header-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+    }
+    .header-table td {
+      vertical-align: top;
+    }
+    .box {
+      border: 1px solid #000;
+      border-radius: 5px;
+      padding: 10px;
+      margin-left: 10px;
+    }
+    .title {
+      font-size: 14px;
+      font-weight: bold;
+    }
+    .details-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    .details-table th, .details-table td {
+      border: 1px solid #000;
+      padding: 5px;
+      text-align: center;
+    }
+    .details-table th {
+      background-color: #f0f0f0;
+    }
+    .totals-table {
+      width: 40%;
+      float: right;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    .totals-table th, .totals-table td {
+      border: 1px solid #000;
+      padding: 5px;
+      text-align: right;
+    }
+    .totals-table th {
+      background-color: #f0f0f0;
+    }
+    .clear {
+      clear: both;
+    }
+    .info-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    .info-table th, .info-table td {
+      border: 1px solid #000;
+      padding: 5px;
+    }
+  </style>
+</head>
+<body>
+
+  <table class="header-table">
+    <tr>
+      <td style="width: 50%;">
+        <div class="box" style="margin-left: 0; min-height: 200px;">
+          <h2 style="margin: 0; font-size: 16px;">{{infoTributaria.razonSocial}}</h2>
+          {{#if infoTributaria.nombreComercial}}
+            <p style="margin: 5px 0;"><strong>Dir Matriz:</strong> {{infoTributaria.dirMatriz}}</p>
+          {{/if}}
+          <p style="margin: 5px 0;"><strong>OBLIGADO A LLEVAR CONTABILIDAD:</strong> {{infoFactura.obligadoContabilidad}}</p>
+        </div>
+      </td>
+      <td style="width: 50%;">
+        <div class="box" style="min-height: 200px;">
+          <h2 style="margin: 0; font-size: 16px;">R.U.C.: {{infoTributaria.ruc}}</h2>
+          <h2 style="margin: 10px 0;">F A C T U R A</h2>
+          <p><strong>No.</strong> {{infoTributaria.estab}}-{{infoTributaria.ptoEmi}}-{{infoTributaria.secuencial}}</p>
+          <p><strong>NÚMERO DE AUTORIZACIÓN:</strong></p>
+          <p style="font-size: 11px;">{{numeroAutorizacion}}</p>
+          <p><strong>FECHA Y HORA DE AUTORIZACIÓN:</strong> {{fechaAutorizacion}}</p>
+          <p><strong>AMBIENTE:</strong> {{#if (eq infoTributaria.ambiente '1')}}PRUEBAS{{else}}PRODUCCIÓN{{/if}}</p>
+          <p><strong>EMISIÓN:</strong> {{#if (eq infoTributaria.tipoEmision '1')}}NORMAL{{else}}NORMAL{{/if}}</p>
+          <p><strong>CLAVE DE ACCESO:</strong></p>
+          {{#if barcodeImage}}
+            <img src="{{barcodeImage}}" alt="Clave de Acceso" style="max-width: 100%; height: auto; margin-top: 5px;" />
+          {{else}}
+            <p style="font-size: 11px;">{{infoTributaria.claveAcceso}}</p>
+          {{/if}}
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <div class="box" style="margin-left: 0; margin-bottom: 20px;">
+    <p style="margin: 5px 0;"><strong>Razón Social / Nombres y Apellidos:</strong> {{infoFactura.razonSocialComprador}}</p>
+    <p style="margin: 5px 0;"><strong>Identificación:</strong> {{infoFactura.identificacionComprador}}</p>
+    <p style="margin: 5px 0;"><strong>Fecha Emisión:</strong> {{infoFactura.fechaEmision}}</p>
+    {{#if infoFactura.direccionComprador}}
+    <p style="margin: 5px 0;"><strong>Dirección:</strong> {{infoFactura.direccionComprador}}</p>
+    {{/if}}
+  </div>
+
+  <table class="details-table">
+    <thead>
+      <tr>
+        <th>Cod. Principal</th>
+        <th>Cant</th>
+        <th>Descripción</th>
+        <th>Precio Unitario</th>
+        <th>Descuento</th>
+        <th>Precio Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each detalles.detalle}}
+      <tr>
+        <td>{{this.codigoPrincipal}}</td>
+        <td>{{this.cantidad}}</td>
+        <td>{{this.descripcion}}</td>
+        <td>{{this.precioUnitario}}</td>
+        <td>{{this.descuento}}</td>
+        <td>{{this.precioTotalSinImpuesto}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+
+  <table class="totals-table">
+    <tbody>
+      {{#if subtotales.subtotal15}}
+      <tr>
+        <th>SUBTOTAL 15%</th>
+        <td>{{subtotales.subtotal15}}</td>
+      </tr>
+      {{/if}}
+      {{!-- {{#if subtotales.subtotal12}}
+      <tr>
+        <th>SUBTOTAL 12%</th>
+        <td>{{subtotales.subtotal12}}</td>
+      </tr>
+      {{/if}} --}}
+      {{#if subtotales.subtotal0}}
+      <tr>
+        <th>SUBTOTAL 0%</th>
+        <td>{{subtotales.subtotal0}}</td>
+      </tr>
+      {{/if}}
+      {{!-- {{#if subtotales.subtotalNoObjeto}}
+      <tr>
+        <th>SUBTOTAL No objeto de IVA</th>
+        <td>{{subtotales.subtotalNoObjeto}}</td>
+      </tr>
+      {{/if}}
+      {{#if subtotales.subtotalExento}}
+      <tr>
+        <th>SUBTOTAL Exento de IVA</th>
+        <td>{{subtotales.subtotalExento}}</td>
+      </tr>
+      {{/if}} --}}
+      <tr>
+        <th>SUBTOTAL SIN IMPUESTOS</th>
+        <td>{{infoFactura.totalSinImpuestos}}</td>
+      </tr>
+      <tr>
+        <th>TOTAL DESCUENTO</th>
+        <td>{{infoFactura.totalDescuento}}</td>
+      </tr>
+      {{#if subtotales.iva15}}
+      <tr>
+        <th>IVA 15%</th>
+        <td>{{subtotales.iva15}}</td>
+      </tr>
+      {{/if}}
+      {{!-- {{#if subtotales.iva12}}
+      <tr>
+        <th>IVA 12%</th>
+        <td>{{subtotales.iva12}}</td>
+      </tr>
+      {{/if}} --}}
+      <tr>
+        <th>VALOR TOTAL</th>
+        <td>{{infoFactura.importeTotal}}</td>
+      </tr>
+    </tbody>
+  </table>
+  
+  <div style="width: 50%; float: left; margin-top: 20px;">
+    <table class="info-table">
+      <thead>
+        <tr>
+          <th>Información Adicional</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each infoAdicional.campoAdicional}}
+        <tr>
+          <td><strong>{{this.[@_nombre]}}:</strong> {{this.[#text]}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+  </div>
+  
+  <div class="clear"></div>
+
+</body>
+</html>

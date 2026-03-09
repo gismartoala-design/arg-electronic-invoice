@@ -1,4 +1,10 @@
-import { IsString, IsEmail, IsOptional, Length, Matches } from 'class-validator';
+import {
+  IsString,
+  IsEmail,
+  IsOptional,
+  Length,
+  Matches,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { REGEX_PATTERNS } from '../constants/sri.constants';
 

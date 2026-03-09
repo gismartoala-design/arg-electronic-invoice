@@ -2,7 +2,11 @@ export interface StorageAdapter {
   /**
    * Guardar contenido en el storage
    */
-  save(key: string, content: Buffer | string, mimeType?: string): Promise<string>;
+  save(
+    key: string,
+    content: Buffer | string,
+    mimeType?: string,
+  ): Promise<string>;
 
   /**
    * Obtener contenido desde el storage

@@ -55,7 +55,9 @@ export class CreateIssuerDto {
   @IsString()
   certP12Path?: string;
 
-  @ApiPropertyOptional({ description: 'Contraseña del certificado (encriptada)' })
+  @ApiPropertyOptional({
+    description: 'Contraseña del certificado (encriptada)',
+  })
   @IsOptional()
   @IsString()
   certPasswordEncrypted?: string;

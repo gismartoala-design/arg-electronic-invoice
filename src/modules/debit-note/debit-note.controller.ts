@@ -9,7 +9,10 @@ export class DebitNoteController {
 
   @Post()
   @ApiOperation({ summary: 'Crear nueva nota de débito' })
-  @ApiResponse({ status: 201, description: 'Nota de débito creada exitosamente' })
+  @ApiResponse({
+    status: 201,
+    description: 'Nota de débito creada exitosamente',
+  })
   create(@Body() createDebitNoteDto: any) {
     return this.debitNoteService.create(createDebitNoteDto);
   }

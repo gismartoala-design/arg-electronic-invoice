@@ -9,9 +9,9 @@ export class SriController {
 
   @Get('connectivity')
   @ApiOperation({ summary: 'Verificar conectividad con servicios del SRI' })
-  @ApiResponse({ 
-    status: 200, 
-    description: 'Estado de conectividad con los servicios del SRI' 
+  @ApiResponse({
+    status: 200,
+    description: 'Estado de conectividad con los servicios del SRI',
   })
   checkConnectivity() {
     return this.sriService.checkConnectivity();

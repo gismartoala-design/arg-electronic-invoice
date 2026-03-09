@@ -1,8 +1,16 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Issuer } from '../invoice/entities';
-import { CreateIssuerDto, UpdateIssuerDto, IssuerResponseDto } from './dto/issuer.dto';
+import {
+  CreateIssuerDto,
+  UpdateIssuerDto,
+  IssuerResponseDto,
+} from './dto/issuer.dto';
 import { validateRuc } from '../../shared/utils/validation.util';
 
 @Injectable()
@@ -61,7 +69,10 @@ export class IssuerService {
     return this.mapToResponseDto(issuer);
   }
 
-  async update(id: string, updateIssuerDto: UpdateIssuerDto): Promise<IssuerResponseDto> {
+  async update(
+    id: string,
+    updateIssuerDto: UpdateIssuerDto,
+  ): Promise<IssuerResponseDto> {
     const issuer = await this.issuerRepository.findOne({ where: { id } });
 
     if (!issuer) {

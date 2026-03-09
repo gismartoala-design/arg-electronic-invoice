@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
-import { AppService } from './app.service';
 import configuration from './config/configuration';
 import { validationSchema } from './config/validation.schema';
 
@@ -17,6 +16,7 @@ import { SriModule } from './modules/sri/sri.module';
 import { XmlBuilderModule } from './modules/xml-builder/xml-builder.module';
 import { SignatureModule } from './modules/signature/signature.module';
 import { StorageModule } from './modules/storage/storage.module';
+import { PdfGeneratorModule } from './modules/pdf-generator/pdf-generator.module';
 
 @Module({
   imports: [
@@ -54,8 +54,9 @@ import { StorageModule } from './modules/storage/storage.module';
     XmlBuilderModule,
     SignatureModule,
     StorageModule,
+    PdfGeneratorModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [],
 })
 export class AppModule {}

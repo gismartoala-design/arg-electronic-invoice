@@ -9,7 +9,10 @@ export class CreditNoteController {
 
   @Post()
   @ApiOperation({ summary: 'Crear nueva nota de crédito' })
-  @ApiResponse({ status: 201, description: 'Nota de crédito creada exitosamente' })
+  @ApiResponse({
+    status: 201,
+    description: 'Nota de crédito creada exitosamente',
+  })
   create(@Body() createCreditNoteDto: any) {
     return this.creditNoteService.create(createCreditNoteDto);
   }

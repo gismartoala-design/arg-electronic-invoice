@@ -79,7 +79,10 @@ export class InvoiceDetailDto {
   @IsOptional()
   detallesAdicionales?: Record<string, string>;
 
-  @ApiProperty({ description: 'Impuestos del detalle', type: [InvoiceDetailTaxDto] })
+  @ApiProperty({
+    description: 'Impuestos del detalle',
+    type: [InvoiceDetailTaxDto],
+  })
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
@@ -118,7 +121,10 @@ export class CreateInvoiceDto {
   @IsString()
   fechaEmision: string;
 
-  @ApiProperty({ description: 'Tipo de identificación del cliente', example: '04' })
+  @ApiProperty({
+    description: 'Tipo de identificación del cliente',
+    example: '04',
+  })
   @IsString()
   @MaxLength(2)
   clienteTipoIdentificacion: string;
@@ -182,7 +188,10 @@ export class CreateInvoiceDto {
   @IsOptional()
   infoAdicional?: Record<string, string>;
 
-  @ApiProperty({ description: 'Detalles de la factura', type: [InvoiceDetailDto] })
+  @ApiProperty({
+    description: 'Detalles de la factura',
+    type: [InvoiceDetailDto],
+  })
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })

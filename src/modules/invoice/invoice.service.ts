@@ -39,8 +39,15 @@ import {
   generateNumericCode,
   validateAccessKey,
 } from '../../shared/utils/access-key.util';
-import { formatDateForSri, getCurrentDateForSri } from '../../shared/utils/date.util';
-import { TipoComprobante, TipoEmision } from '../../shared/constants/sri.constants';
+import {
+  formatDateForSri,
+  getCurrentDateForSri,
+} from '../../shared/utils/date.util';
+import {
+  TipoComprobante,
+  TipoEmision,
+} from '../../shared/constants/sri.constants';
+import { PdfGeneratorService } from '../pdf-generator/pdf-generator.service';
 
 @Injectable()
 export class InvoiceService {
@@ -66,13 +73,18 @@ export class InvoiceService {
     private readonly sriService: SriService,
     private readonly storageService: StorageService,
     private readonly configService: ConfigService,
+    private readonly pdfGeneratorService: PdfGeneratorService,
   ) {}
 
   /**
    * Crear una nueva factura
    */
-  async create(createInvoiceDto: CreateInvoiceDto): Promise<InvoiceResponseDto> {
-    this.logger.log(`Creating invoice for issuer: ${createInvoiceDto.issuerId}`);
+  async create(
+    createInvoiceDto: CreateInvoiceDto,
+  ): Promise<InvoiceResponseDto> {
+    this.logger.log(
+      `Creating invoice for issuer: ${createInvoiceDto.issuerId}`,
+    );
 
     // Validar que el emisor exista
     const issuer = await this.issuerRepository.findOne({
@@ -133,7 +145,11 @@ export class InvoiceService {
     }
 
     // Registrar evento de creación
-    await this.createEvent(savedInvoice.id, InvoiceEventType.CREATED, 'Factura creada');
+    await this.createEvent(
+      savedInvoice.id,
+      InvoiceEventType.CREATED,
+      'Factura creada',
+    );
 
     this.logger.log(`Invoice created with ID: ${savedInvoice.id}`);
 
@@ -151,7 +167,8 @@ export class InvoiceService {
 
     if (filters.issuerId) where.issuerId = filters.issuerId;
     if (filters.status) where.status = filters.status;
-    if (filters.sriReceptionStatus) where.sriReceptionStatus = filters.sriReceptionStatus;
+    if (filters.sriReceptionStatus)
+      where.sriReceptionStatus = filters.sriReceptionStatus;
     if (filters.sriAuthorizationStatus)
       where.sriAuthorizationStatus = filters.sriAuthorizationStatus;
     if (filters.clienteIdentificacion)
@@ -200,7 +217,43 @@ export class InvoiceService {
   async getArtifact(
     invoiceId: string,
     type: ArtifactType,
-  ): Promise<{ content: string; mimeType: string }> {
+  ): Promise<{ buffer: Buffer; mimeType: string; filename: string }> {
+    if (type === ArtifactType.RIDE_PDF) {
+      // Para RIDE, buscamos el XML_AUTHORIZED y generamos el PDF al vuelo
+      const xmlArtifact = await this.artifactRepository.findOne({
+        where: { invoiceId, type: ArtifactType.XML_AUTHORIZED },
+      });
+
+      if (!xmlArtifact || (!xmlArtifact.content && !xmlArtifact.storageKey)) {
+        throw new NotFoundException(
+          `Factura ${invoiceId} no cuenta a\u00fan con un XML autorizado para generar el RIDE`,
+        );
+      }
+
+      const invoice = await this.invoiceRepository.findOne({ where: { id: invoiceId } });
+
+      let xmlContent = xmlArtifact.content;
+      if (!xmlContent && xmlArtifact.storageKey) {
+        const fileBuffer = await this.storageService.get(xmlArtifact.storageKey);
+        xmlContent = fileBuffer.toString('utf8');
+      }
+
+      const buffer = await this.pdfGeneratorService.generateRideFromXml(
+        xmlContent,
+        {
+          numeroAutorizacion: invoice?.authorizationNumber,
+          fechaAutorizacion: invoice?.authorizedAt,
+        }
+      );
+
+      return {
+        buffer,
+        mimeType: 'application/pdf',
+        filename: `${invoiceId}_RIDE.pdf`,
+      };
+    }
+
+    // Para otros tipos de artefactos
     const artifact = await this.artifactRepository.findOne({
       where: { invoiceId, type },
     });
@@ -211,24 +264,35 @@ export class InvoiceService {
       );
     }
 
-    let content: string;
+    let buffer: Buffer;
 
     if (artifact.content) {
       // XML, JSON: est\u00e1 en la columna content de la DB
-      content = artifact.content;
+      buffer = Buffer.from(artifact.content, 'utf8');
     } else if (artifact.storageKey) {
-      // PDF: est\u00e1 en Cloud Storage
-      const buffer = await this.storageService.get(artifact.storageKey);
-      content = buffer.toString('base64'); // Devolver PDF como base64
+      // PDF (por si hubieran PDFs hist\u00f3ricos): est\u00e1 en Cloud Storage
+      buffer = await this.storageService.get(artifact.storageKey);
     } else {
       throw new InternalServerErrorException(
         `Artefacto ${type} no tiene contenido ni storageKey`,
       );
     }
 
+    // Determinar extensi\u00f3n basado en el mimeType o el ArtifactType
+    let extension = 'dat';
+    if (artifact.mimeType === 'application/xml' || type.includes('XML')) {
+      extension = 'xml';
+    } else if (
+      artifact.mimeType === 'application/json' ||
+      type.includes('RESPONSE')
+    ) {
+      extension = 'json';
+    }
+
     return {
-      content,
+      buffer,
       mimeType: artifact.mimeType,
+      filename: `${invoiceId}_${type}.${extension}`,
     };
   }
 
@@ -243,9 +307,9 @@ export class InvoiceService {
       relations: ['detalles', 'detalles.impuestos', 'pagos', 'issuer'],
     });
 
-    this.logger.debug("=== FACTURA OBTENIDA PARA AUTORIZACIÓN ===");
+    this.logger.debug('=== FACTURA OBTENIDA PARA AUTORIZACIÓN ===');
     this.logger.debug(invoice);
-    this.logger.debug("=== FIN FACTURA OBTENIDA ===");
+    this.logger.debug('=== FIN FACTURA OBTENIDA ===');
 
     if (!invoice) {
       throw new NotFoundException(`Factura con ID ${id} no encontrada`);
@@ -269,7 +333,7 @@ export class InvoiceService {
       this.logger.debug('=== XML SIN FIRMAR ===');
       this.logger.debug(xmlUnsigned);
       this.logger.debug('=== FIN XML SIN FIRMAR ===');
-      
+
       await this.saveArtifact(
         invoice.id,
         ArtifactType.XML_UNSIGNED,
@@ -281,17 +345,16 @@ export class InvoiceService {
       await this.invoiceRepository.save(invoice);
 
       // Paso 3: Firmar XML usando certificado del issuer
-      // Si el issuer no tiene certificado configurado, se usarán los valores del .env
-      this.logger.log(`Firmando con certificado del issuer: ${invoice.issuer.certP12Path || 'usando configuración por defecto'}`);
       const xmlSigned = await this.signatureService.signXml(
         xmlUnsigned,
         invoice.issuer.certP12Path,
         invoice.issuer.certPasswordEncrypted,
       );
+
       this.logger.debug('=== XML FIRMADO ===');
       this.logger.debug(xmlSigned);
       this.logger.debug('=== FIN XML FIRMADO ===');
-      
+
       await this.saveArtifact(
         invoice.id,
         ArtifactType.XML_SIGNED,
@@ -301,7 +364,11 @@ export class InvoiceService {
 
       invoice.status = InvoiceStatus.SIGNED;
       await this.invoiceRepository.save(invoice);
-      await this.createEvent(invoice.id, InvoiceEventType.SIGNED, 'Factura firmada');
+      await this.createEvent(
+        invoice.id,
+        InvoiceEventType.SIGNED,
+        'Factura firmada',
+      );
 
       // Paso 4: Enviar al SRI para recepción
       invoice.status = InvoiceStatus.SENDING;
@@ -322,13 +389,20 @@ export class InvoiceService {
 
       if (receptionResponse.estado === 'RECIBIDA') {
         invoice.sriReceptionStatus = SriReceptionStatus.RECEIVED;
-        await this.createEvent(invoice.id, InvoiceEventType.RECEIVED, 'Recibida por el SRI');
+        await this.createEvent(
+          invoice.id,
+          InvoiceEventType.RECEIVED,
+          'Recibida por el SRI',
+        );
       } else {
         invoice.sriReceptionStatus = SriReceptionStatus.DEVUELTA;
-        
+
         // Extraer mensaje de error del primer comprobante
         let errorMessage = 'Error desconocido en recepción';
-        if (receptionResponse.comprobantes && receptionResponse.comprobantes.length > 0) {
+        if (
+          receptionResponse.comprobantes &&
+          receptionResponse.comprobantes.length > 0
+        ) {
           const comprobante = receptionResponse.comprobantes[0];
           if (comprobante.mensajes && comprobante.mensajes.length > 0) {
             const primerMensaje = comprobante.mensajes[0];
@@ -338,7 +412,7 @@ export class InvoiceService {
             }
           }
         }
-        
+
         invoice.lastError = errorMessage;
         await this.createEvent(
           invoice.id,
@@ -359,7 +433,7 @@ export class InvoiceService {
       return this.mapToResponseDto(await this.findOneEntity(id));
     } catch (error) {
       this.logger.error(`Error authorizing invoice ${id}: ${error.message}`);
-      
+
       invoice.status = InvoiceStatus.ERROR;
       invoice.lastError = error.message;
       invoice.retryCount += 1;
@@ -392,7 +466,9 @@ export class InvoiceService {
       invoice.sriAuthorizationStatus = SriAuthorizationStatus.PENDING;
       await this.invoiceRepository.save(invoice);
 
-      const authResponse = await this.sriService.checkAuthorization(invoice.claveAcceso);
+      const authResponse = await this.sriService.checkAuthorization(
+        invoice.claveAcceso,
+      );
 
       await this.saveArtifact(
         invoice.id,
@@ -434,14 +510,17 @@ export class InvoiceService {
           `No autorizada: ${authResponse.mensaje}`,
         );
       } else if (authResponse.estado === 'EN_PROCESAMIENTO') {
-        invoice.sriAuthorizationStatus = SriAuthorizationStatus.EN_PROCESAMIENTO;
+        invoice.sriAuthorizationStatus =
+          SriAuthorizationStatus.EN_PROCESAMIENTO;
       }
 
       await this.invoiceRepository.save(invoice);
 
       return this.mapToResponseDto(invoice);
     } catch (error) {
-      this.logger.error(`Error checking authorization for invoice ${id}: ${error.message}`);
+      this.logger.error(
+        `Error checking authorization for invoice ${id}: ${error.message}`,
+      );
       throw new InternalServerErrorException(
         `Error al consultar autorización: ${error.message}`,
       );
@@ -459,10 +538,16 @@ export class InvoiceService {
     }
 
     if (invoice.retryCount >= 5) {
-      throw new BadRequestException('Se alcanzó el límite máximo de reintentos');
+      throw new BadRequestException(
+        'Se alcanzó el límite máximo de reintentos',
+      );
     }
 
-    await this.createEvent(invoice.id, InvoiceEventType.RETRY, 'Reintentando autorización');
+    await this.createEvent(
+      invoice.id,
+      InvoiceEventType.RETRY,
+      'Reintentando autorización',
+    );
 
     return this.authorize(id);
   }
@@ -503,7 +588,9 @@ export class InvoiceService {
 
     // Validar que la clave es correcta
     if (!validateAccessKey(claveAcceso)) {
-      throw new InternalServerErrorException('Error al generar clave de acceso válida');
+      throw new InternalServerErrorException(
+        'Error al generar clave de acceso válida',
+      );
     }
 
     return claveAcceso;
@@ -702,13 +789,14 @@ export class InvoiceService {
     // 3. Calcular importeTotal esperado
     const totalDescuento = Number(dto.totalDescuento || 0);
     const propina = Number(dto.propina || 0);
-    const importeTotalEsperado = totalSinImpuestos + sumImpuestos + propina - totalDescuento;
+    const importeTotalEsperado =
+      totalSinImpuestos + sumImpuestos + propina - totalDescuento;
 
     const importeTotal = Number(dto.importeTotal);
     if (Math.abs(importeTotal - importeTotalEsperado) > 0.01) {
       throw new BadRequestException(
         `importeTotal (${importeTotal}) no coincide con el cálculo esperado (${importeTotalEsperado.toFixed(2)}). ` +
-        `Fórmula: totalSinImpuestos (${totalSinImpuestos}) + impuestos (${sumImpuestos.toFixed(2)}) + propina (${propina}) - descuentos (${totalDescuento})`,
+          `Fórmula: totalSinImpuestos (${totalSinImpuestos}) + impuestos (${sumImpuestos.toFixed(2)}) + propina (${propina}) - descuentos (${totalDescuento})`,
       );
     }
 
@@ -743,7 +831,8 @@ export class InvoiceService {
     const sumImpuestos = (invoice.detalles || []).reduce((sum, detalle) => {
       const impuestos = detalle.impuestos || [];
       return (
-        sum + impuestos.reduce((taxSum, imp) => taxSum + Number(imp.valor || 0), 0)
+        sum +
+        impuestos.reduce((taxSum, imp) => taxSum + Number(imp.valor || 0), 0)
       );
     }, 0);
 

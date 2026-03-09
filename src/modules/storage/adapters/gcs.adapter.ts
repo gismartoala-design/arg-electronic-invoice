@@ -10,7 +10,7 @@ export class GcsStorageAdapter implements StorageAdapter {
 
   constructor(bucketName: string, keyFilePath?: string) {
     const config: any = {};
-    
+
     // Si se proporciona keyFilePath, usarlo (desarrollo local)
     // Si no, usar Application Default Credentials (Cloud Run, GKE, etc)
     if (keyFilePath) {
@@ -23,14 +23,18 @@ export class GcsStorageAdapter implements StorageAdapter {
 
     this.storage = new Storage(config);
     this.bucket = this.storage.bucket(bucketName);
-    
+
     this.logger.log(`GCS Storage initialized with bucket: ${bucketName}`);
   }
 
-  async save(key: string, content: Buffer | string, mimeType?: string): Promise<string> {
+  async save(
+    key: string,
+    content: Buffer | string,
+    mimeType?: string,
+  ): Promise<string> {
     try {
       const file = this.bucket.file(key);
-      
+
       const buffer = Buffer.isBuffer(content) ? content : Buffer.from(content);
 
       await file.save(buffer, {
@@ -64,7 +68,9 @@ export class GcsStorageAdapter implements StorageAdapter {
       const [exists] = await file.exists();
       return exists;
     } catch (error) {
-      this.logger.error(`Error checking file existence in GCS ${key}: ${error.message}`);
+      this.logger.error(
+        `Error checking file existence in GCS ${key}: ${error.message}`,
+      );
       return false;
     }
   }
@@ -75,15 +81,20 @@ export class GcsStorageAdapter implements StorageAdapter {
       await file.delete();
       this.logger.debug(`File deleted from GCS: ${key}`);
     } catch (error) {
-      this.logger.error(`Error deleting file from GCS ${key}: ${error.message}`);
+      this.logger.error(
+        `Error deleting file from GCS ${key}: ${error.message}`,
+      );
       throw new Error(`Failed to delete file from GCS: ${error.message}`);
     }
   }
 
-  async getSignedUrl(key: string, expiresInMinutes: number = 60): Promise<string> {
+  async getSignedUrl(
+    key: string,
+    expiresInMinutes: number = 60,
+  ): Promise<string> {
     try {
       const file = this.bucket.file(key);
-      
+
       const options = {
         version: 'v4' as const,
         action: 'read' as const,
@@ -93,7 +104,9 @@ export class GcsStorageAdapter implements StorageAdapter {
       const [url] = await file.getSignedUrl(options);
       return url;
     } catch (error) {
-      this.logger.error(`Error generating signed URL for ${key}: ${error.message}`);
+      this.logger.error(
+        `Error generating signed URL for ${key}: ${error.message}`,
+      );
       throw new Error(`Failed to generate signed URL: ${error.message}`);
     }
   }
@@ -103,14 +116,16 @@ export class GcsStorageAdapter implements StorageAdapter {
       const [files] = await this.bucket.getFiles({ prefix });
       return files.map((file) => file.name);
     } catch (error) {
-      this.logger.error(`Error listing files with prefix ${prefix}: ${error.message}`);
+      this.logger.error(
+        `Error listing files with prefix ${prefix}: ${error.message}`,
+      );
       return [];
     }
   }
 
   private getMimeType(key: string): string {
     const extension = key.split('.').pop()?.toLowerCase();
-    
+
     const mimeTypes: Record<string, string> = {
       xml: 'application/xml',
       pdf: 'application/pdf',

@@ -9,7 +9,10 @@ export class RemissionGuideController {
 
   @Post()
   @ApiOperation({ summary: 'Crear nueva guía de remisión' })
-  @ApiResponse({ status: 201, description: 'Guía de remisión creada exitosamente' })
+  @ApiResponse({
+    status: 201,
+    description: 'Guía de remisión creada exitosamente',
+  })
   create(@Body() createRemissionGuideDto: any) {
     return this.remissionGuideService.create(createRemissionGuideDto);
   }

@@ -31,7 +31,9 @@ export class StorageService implements OnModuleInit {
 
       case StorageProvider.GCS:
         const gcsBucket = this.configService.get<string>('storage.gcsBucket');
-        const gcsKeyFile = this.configService.get<string>('storage.gcsKeyFilePath');
+        const gcsKeyFile = this.configService.get<string>(
+          'storage.gcsKeyFilePath',
+        );
 
         if (!gcsBucket) {
           throw new Error('GCS bucket name is required when using GCS storage');
@@ -52,7 +54,11 @@ export class StorageService implements OnModuleInit {
   /**
    * Guardar archivo en el storage
    */
-  async save(key: string, content: Buffer | string, mimeType?: string): Promise<string> {
+  async save(
+    key: string,
+    content: Buffer | string,
+    mimeType?: string,
+  ): Promise<string> {
     return this.adapter.save(key, content, mimeType);
   }
 
@@ -76,21 +82,23 @@ export class StorageService implements OnModuleInit {
   private parseGcsUri(uri: string): string {
     // Remover el prefijo gs://
     const withoutProtocol = uri.replace(/^gs:\/\//, '');
-    
+
     // Separar bucket y path
     const firstSlash = withoutProtocol.indexOf('/');
-    
+
     if (firstSlash === -1) {
-      throw new Error(`Invalid GCS URI format: ${uri}. Expected format: gs://bucket-name/path/to/file`);
+      throw new Error(
+        `Invalid GCS URI format: ${uri}. Expected format: gs://bucket-name/path/to/file`,
+      );
     }
-    
+
     // Extraer solo la ruta (todo después del primer /)
     const path = withoutProtocol.substring(firstSlash + 1);
-    
+
     if (!path) {
       throw new Error(`Invalid GCS URI format: ${uri}. Path cannot be empty`);
     }
-    
+
     return path;
   }
 
@@ -113,7 +121,10 @@ export class StorageService implements OnModuleInit {
    * @param key Clave del archivo
    * @param expiresInMinutes Tiempo de expiración en minutos (default: 60)
    */
-  async getSignedUrl(key: string, expiresInMinutes: number = 60): Promise<string> {
+  async getSignedUrl(
+    key: string,
+    expiresInMinutes: number = 60,
+  ): Promise<string> {
     return this.adapter.getSignedUrl(key, expiresInMinutes);
   }
 

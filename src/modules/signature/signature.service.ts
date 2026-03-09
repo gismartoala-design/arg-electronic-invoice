@@ -150,7 +150,7 @@ export class SignatureService {
 
     const subject = certificate.subject.attributes.reduce(
       (acc, attr) => {
-        const key = (attr.shortName || attr.name || 'unknown') as string;
+        const key = attr.shortName || attr.name || 'unknown';
         acc[key] = String(attr.value);
         return acc;
       },
@@ -159,7 +159,7 @@ export class SignatureService {
 
     const issuer = certificate.issuer.attributes.reduce(
       (acc, attr) => {
-        const key = (attr.shortName || attr.name || 'unknown') as string;
+        const key = attr.shortName || attr.name || 'unknown';
         acc[key] = String(attr.value);
         return acc;
       },
@@ -254,7 +254,9 @@ export class SignatureService {
     const password = certPassword || this.signaturePassword;
 
     if (!path) {
-      throw new Error('No se especificó ruta del certificado (ni por parámetro ni en .env)');
+      throw new Error(
+        'No se especificó ruta del certificado (ni por parámetro ni en .env)',
+      );
     }
 
     // Cargar el archivo P12
@@ -273,20 +275,22 @@ export class SignatureService {
     }
 
     const p12Asn1 = forge.asn1.fromDer(p12Buffer.toString('binary'));
-    const p12 = forge.pkcs12.pkcs12FromAsn1(
-      p12Asn1,
-      false,
-      password,
-    );
+    const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, false, password);
 
     // Obtener certificados de forma segura
     const certBagsResult = p12.getBags({ bagType: forge.pki.oids.certBag });
-    const certBags = (certBagsResult && certBagsResult[forge.pki.oids.certBag]) || [];
+    const certBags =
+      (certBagsResult && certBagsResult[forge.pki.oids.certBag]) || [];
 
     // Obtener llaves privadas de forma segura
-    const pkcs8BagsResult = p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag });
-    let keyBags = (pkcs8BagsResult && pkcs8BagsResult[forge.pki.oids.pkcs8ShroudedKeyBag]) || [];
-    
+    const pkcs8BagsResult = p12.getBags({
+      bagType: forge.pki.oids.pkcs8ShroudedKeyBag,
+    });
+    let keyBags =
+      (pkcs8BagsResult &&
+        pkcs8BagsResult[forge.pki.oids.pkcs8ShroudedKeyBag]) ||
+      [];
+
     // Si no se encontró en pkcs8ShroudedKeyBag, buscar en keyBag
     if (!keyBags || keyBags.length === 0) {
       const keyBagsResult = p12.getBags({ bagType: forge.pki.oids.keyBag });
@@ -300,7 +304,7 @@ export class SignatureService {
     if (!key) throw new Error('No se encontró clave privada en el P12');
 
     return {
-      privateKey: key as forge.pki.rsa.PrivateKey,
+      privateKey: key,
       certificate: cert,
     };
   }
@@ -316,7 +320,7 @@ function privateKeyPemToPkcs8Der(keyPem: string): ArrayBuffer {
   }
 
   if (keyPem.includes('BEGIN RSA PRIVATE KEY')) {
-    const rsaKey = forge.pki.privateKeyFromPem(keyPem) as forge.pki.rsa.PrivateKey;
+    const rsaKey = forge.pki.privateKeyFromPem(keyPem);
     const rsaPrivateKeyAsn1 = forge.pki.privateKeyToAsn1(rsaKey);
     const pkcs8Asn1 = forge.pki.wrapRsaPrivateKey(rsaPrivateKeyAsn1);
     const pkcs8DerBytes = forge.asn1.toDer(pkcs8Asn1).getBytes();
