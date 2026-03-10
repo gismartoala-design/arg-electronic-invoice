@@ -17,11 +17,12 @@ RUN apk add --no-cache \
 # Copiar archivos de dependencias
 COPY package*.json ./
 COPY tsconfig*.json ./
+COPY nest-cli.json ./
 
 # Instalar dependencias (incluidas devDependencies para compilar)
 RUN npm ci
 
-# Copiar código fuente
+# Copiar código fuente y configuración
 COPY src ./src
 
 # Compilar aplicación
