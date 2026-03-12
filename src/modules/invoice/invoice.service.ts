@@ -499,17 +499,33 @@ export class InvoiceService {
           'Factura autorizada por el SRI',
           { authorizationNumber: authResponse.numeroAutorizacion },
         );
-      } else if (authResponse.estado === 'NO_AUTORIZADO') {
+      } else if (authResponse.estado === 'NO AUTORIZADO') {
         invoice.status = InvoiceStatus.NOT_AUTHORIZED;
         invoice.sriAuthorizationStatus = SriAuthorizationStatus.NO_AUTORIZADO;
-        invoice.lastError = authResponse.mensaje;
+
+        // Extraer mensaje de error desde el array mensajes
+        let errorMessage = 'No autorizada por el SRI';
+        const mensajes = authResponse.mensajes;
+        if (Array.isArray(mensajes) && mensajes.length > 0) {
+          errorMessage = mensajes
+            .map((m: any) => {
+              let msg = `[${m.identificador}] ${m.mensaje}`;
+              if (m.informacionAdicional) msg += ` - ${m.informacionAdicional}`;
+              return msg;
+            })
+            .join(' | ');
+        } else if (authResponse.mensaje) {
+          errorMessage = authResponse.mensaje;
+        }
+
+        invoice.lastError = errorMessage;
 
         await this.createEvent(
           invoice.id,
           InvoiceEventType.NOT_AUTHORIZED,
-          `No autorizada: ${authResponse.mensaje}`,
+          `No autorizada: ${errorMessage}`,
         );
-      } else if (authResponse.estado === 'EN_PROCESAMIENTO') {
+      } else if (authResponse.estado === 'EN PROCESO') {
         invoice.sriAuthorizationStatus =
           SriAuthorizationStatus.EN_PROCESAMIENTO;
       }

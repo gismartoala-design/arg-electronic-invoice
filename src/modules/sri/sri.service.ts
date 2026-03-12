@@ -168,7 +168,7 @@ export class SriService {
       // Intentar extraer error específico del SRI (SOAP Fault)
       const fault = this.extractSoapFault(error);
       if (fault) {
-        this.logger.error(`🔥 SRI FAULT: ${fault}`);
+        this.logger.error(`SRI FAULT: ${fault}`);
 
         if (
           fault.includes('GenericJDBCException') ||
