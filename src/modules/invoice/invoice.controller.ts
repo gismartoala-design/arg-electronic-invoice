@@ -14,6 +14,7 @@ import { ArtifactType } from './entities';
 import type { Response } from 'express';
 import {
   CreateInvoiceDto,
+  IssueInvoiceDto,
   QueryInvoiceDto,
   InvoiceResponseDto,
   PaginatedInvoiceResponseDto,
@@ -37,6 +38,22 @@ export class InvoiceController {
     @Body() createInvoiceDto: CreateInvoiceDto,
   ): Promise<InvoiceResponseDto> {
     return this.invoiceService.create(createInvoiceDto);
+  }
+
+  @Post('issue')
+  @ApiOperation({
+    summary:
+      'Registrar factura con secuencial externo y autorizarla opcionalmente',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Factura registrada y procesada exitosamente',
+    type: InvoiceResponseDto,
+  })
+  @ApiResponse({ status: 400, description: 'Datos inválidos' })
+  @ApiResponse({ status: 404, description: 'Emisor no encontrado' })
+  issue(@Body() issueInvoiceDto: IssueInvoiceDto): Promise<InvoiceResponseDto> {
+    return this.invoiceService.issue(issueInvoiceDto);
   }
 
   @Get()

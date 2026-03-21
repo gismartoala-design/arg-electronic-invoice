@@ -54,10 +54,10 @@ export class SriService {
     );
 
     // Si está en modo desarrollo sin URL del SRI, usar mock
-    // if (!this.receptionUrl || this.useMock) {
-    //   this.logger.warn('Usando respuesta MOCK para recepción (modo desarrollo)');
-    //   return this.getMockReceptionResponse(data.claveAcceso);
-    // }
+    if (!this.receptionUrl || this.useMock) {
+      this.logger.warn('Usando respuesta MOCK para recepción (modo desarrollo)');
+      return this.getMockReceptionResponse(data.claveAcceso);
+    }
 
     try {
       // Construir envelope SOAP para recepción
@@ -124,10 +124,10 @@ export class SriService {
     this.logger.log(`Consultando autorización en SRI: ${claveAcceso}`);
 
     // Si está en modo desarrollo sin URL del SRI, usar mock
-    // if (!this.authorizationUrl || this.useMock) {
-    //   this.logger.warn('Usando respuesta MOCK para autorización (modo desarrollo)');
-    //   return this.getMockAuthorizationResponse(claveAcceso);
-    // }
+    if (!this.authorizationUrl || this.useMock) {
+      this.logger.warn('Usando respuesta MOCK para autorización (modo desarrollo)');
+      return this.getMockAuthorizationResponse(claveAcceso);
+    }
 
     try {
       // Construir envelope SOAP para autorización

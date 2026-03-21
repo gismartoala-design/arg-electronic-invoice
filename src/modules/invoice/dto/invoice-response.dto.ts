@@ -15,6 +15,12 @@ export class InvoiceResponseDto {
   @ApiProperty()
   secuencial: string;
 
+  @ApiProperty()
+  establecimiento: string;
+
+  @ApiProperty()
+  puntoEmision: string;
+
   @ApiPropertyOptional()
   claveAcceso?: string;
 

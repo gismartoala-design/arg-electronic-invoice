@@ -26,6 +26,7 @@ import {
 } from './entities';
 import {
   CreateInvoiceDto,
+  IssueInvoiceDto,
   QueryInvoiceDto,
   InvoiceResponseDto,
   PaginatedInvoiceResponseDto,
@@ -37,6 +38,7 @@ import { StorageService } from '../storage/storage.service';
 import {
   generateAccessKey,
   generateNumericCode,
+  parseAccessKey,
   validateAccessKey,
 } from '../../shared/utils/access-key.util';
 import {
@@ -82,78 +84,28 @@ export class InvoiceService {
   async create(
     createInvoiceDto: CreateInvoiceDto,
   ): Promise<InvoiceResponseDto> {
-    this.logger.log(
-      `Creating invoice for issuer: ${createInvoiceDto.issuerId}`,
+    const invoice = await this.createInvoiceRecord(createInvoiceDto);
+    return this.mapToResponseDto(invoice);
+  }
+
+  /**
+   * Registrar factura con secuencial externo y autorizarla opcionalmente.
+   * El ERP conserva la propiedad del secuencial y este servicio orquesta el ciclo SRI.
+   */
+  async issue(issueInvoiceDto: IssueInvoiceDto): Promise<InvoiceResponseDto> {
+    const invoice = await this.createInvoiceRecord(
+      issueInvoiceDto,
+      issueInvoiceDto.establecimiento,
+      issueInvoiceDto.puntoEmision,
+      issueInvoiceDto.secuencial,
+      issueInvoiceDto.claveAcceso,
     );
 
-    // Validar que el emisor exista
-    const issuer = await this.issuerRepository.findOne({
-      where: { id: createInvoiceDto.issuerId, isActive: true },
-    });
-
-    if (!issuer) {
-      throw new NotFoundException('Emisor no encontrado');
+    if (issueInvoiceDto.autorizar === false) {
+      return this.mapToResponseDto(invoice);
     }
 
-    // Generar secuencial
-    const secuencial = await this.generateSecuencial(issuer.id);
-
-    // Validar totales antes de crear
-    this.validateInvoiceTotals(createInvoiceDto);
-
-    const { detalles, pagos, ...invoicePayload } = createInvoiceDto;
-
-    // Crear la factura
-    const invoice = this.invoiceRepository.create({
-      ...invoicePayload,
-      secuencial,
-      status: InvoiceStatus.DRAFT,
-      moneda: createInvoiceDto.moneda || 'DOLAR',
-      totalDescuento: createInvoiceDto.totalDescuento || 0,
-      propina: createInvoiceDto.propina || 0,
-    });
-
-    // Guardar la factura
-    const savedInvoice = await this.invoiceRepository.save(invoice);
-
-    // Guardar detalles
-    for (const detalleDto of detalles) {
-      const { impuestos, ...detallePayload } = detalleDto;
-      const detalle = this.detailRepository.create({
-        ...detallePayload,
-        invoiceId: savedInvoice.id,
-      });
-      await this.detailRepository.save(detalle);
-
-      // Guardar impuestos del detalle
-      for (const impuestoDto of impuestos) {
-        const impuesto = this.detailTaxRepository.create({
-          ...impuestoDto,
-          detailId: detalle.id,
-        });
-        await this.detailTaxRepository.save(impuesto);
-      }
-    }
-
-    // Guardar pagos
-    for (const pagoDto of pagos) {
-      const pago = this.paymentRepository.create({
-        ...pagoDto,
-        invoiceId: savedInvoice.id,
-      });
-      await this.paymentRepository.save(pago);
-    }
-
-    // Registrar evento de creación
-    await this.createEvent(
-      savedInvoice.id,
-      InvoiceEventType.CREATED,
-      'Factura creada',
-    );
-
-    this.logger.log(`Invoice created with ID: ${savedInvoice.id}`);
-
-    return this.mapToResponseDto(savedInvoice);
+    return this.authorize(invoice.id);
   }
 
   /**
@@ -571,9 +523,13 @@ export class InvoiceService {
   /**
    * Generar secuencial
    */
-  private async generateSecuencial(issuerId: string): Promise<string> {
+  private async generateSecuencial(
+    issuerId: string,
+    establecimiento: string,
+    puntoEmision: string,
+  ): Promise<string> {
     const lastInvoice = await this.invoiceRepository.findOne({
-      where: { issuerId },
+      where: { issuerId, establecimiento, puntoEmision },
       order: { secuencial: 'DESC' },
     });
 
@@ -583,6 +539,38 @@ export class InvoiceService {
     }
 
     return nextSecuencial.toString().padStart(9, '0');
+  }
+
+  private async normalizeAndValidateSecuencial(
+    issuerId: string,
+    establecimiento: string,
+    puntoEmision: string,
+    secuencial: string,
+  ): Promise<string> {
+    const normalizedSecuencial = secuencial.trim().padStart(9, '0');
+
+    if (!/^\d{9}$/.test(normalizedSecuencial)) {
+      throw new BadRequestException(
+        'El secuencial debe contener entre 1 y 9 dígitos numéricos',
+      );
+    }
+
+    const existingInvoice = await this.invoiceRepository.findOne({
+      where: {
+        issuerId,
+        establecimiento,
+        puntoEmision,
+        secuencial: normalizedSecuencial,
+      },
+    });
+
+    if (existingInvoice) {
+      throw new BadRequestException(
+        `Ya existe una factura con ${establecimiento}-${puntoEmision}-${normalizedSecuencial} para este emisor`,
+      );
+    }
+
+    return normalizedSecuencial;
   }
 
   /**
@@ -596,7 +584,7 @@ export class InvoiceService {
       tipoComprobante: TipoComprobante.FACTURA,
       ruc: issuer.ruc,
       ambiente: issuer.ambiente === AmbienteType.PRODUCCION ? '2' : '1',
-      serie: issuer.establecimiento + issuer.puntoEmision,
+      serie: invoice.establecimiento + invoice.puntoEmision,
       numeroComprobante: invoice.secuencial,
       codigoNumerico: generateNumericCode(),
       tipoEmision: TipoEmision.NORMAL,
@@ -606,6 +594,62 @@ export class InvoiceService {
     if (!validateAccessKey(claveAcceso)) {
       throw new InternalServerErrorException(
         'Error al generar clave de acceso válida',
+      );
+    }
+
+    return claveAcceso;
+  }
+
+  private async resolveClaveAcceso(
+    invoice: Invoice,
+    providedClaveAcceso?: string,
+  ): Promise<string> {
+    if (!providedClaveAcceso) {
+      return this.generateClaveAcceso(invoice);
+    }
+
+    const claveAcceso = providedClaveAcceso.trim();
+
+    if (!validateAccessKey(claveAcceso)) {
+      throw new BadRequestException(
+        'La claveAcceso enviada por el cliente no es válida',
+      );
+    }
+
+    const parsedAccessKey = parseAccessKey(claveAcceso);
+    if (!parsedAccessKey) {
+      throw new BadRequestException(
+        'No se pudo interpretar la claveAcceso enviada por el cliente',
+      );
+    }
+
+    const issuer = invoice.issuer;
+    const expectedFecha = invoice.fechaEmision.replace(/\//g, '');
+    const expectedAmbiente =
+      issuer.ambiente === AmbienteType.PRODUCCION ? '2' : '1';
+    const expectedSerie = `${invoice.establecimiento}${invoice.puntoEmision}`;
+
+    if (
+      parsedAccessKey.fecha !== expectedFecha ||
+      parsedAccessKey.tipoComprobante !== TipoComprobante.FACTURA ||
+      parsedAccessKey.ruc !== issuer.ruc ||
+      parsedAccessKey.ambiente !== expectedAmbiente ||
+      parsedAccessKey.serie !== expectedSerie ||
+      parsedAccessKey.numeroComprobante !== invoice.secuencial ||
+      parsedAccessKey.tipoEmision !== TipoEmision.NORMAL
+    ) {
+      throw new BadRequestException(
+        'La claveAcceso enviada por el cliente no coincide con los datos fiscales de la factura',
+      );
+    }
+
+    const existingInvoice = await this.invoiceRepository.findOne({
+      where: { claveAcceso },
+    });
+
+    if (existingInvoice) {
+      throw new BadRequestException(
+        `Ya existe una factura con la claveAcceso ${claveAcceso}`,
       );
     }
 
@@ -627,8 +671,8 @@ export class InvoiceService {
         ruc: issuer.ruc,
         claveAcceso: invoice.claveAcceso,
         codDoc: TipoComprobante.FACTURA,
-        estab: issuer.establecimiento,
-        ptoEmi: issuer.puntoEmision,
+        estab: invoice.establecimiento,
+        ptoEmi: invoice.puntoEmision,
         secuencial: invoice.secuencial,
         dirMatriz: issuer.direccionMatriz,
       },
@@ -777,6 +821,110 @@ export class InvoiceService {
     return invoice;
   }
 
+  private async createInvoiceRecord(
+    createInvoiceDto: CreateInvoiceDto,
+    providedEstablecimiento?: string,
+    providedPuntoEmision?: string,
+    providedSecuencial?: string,
+    providedClaveAcceso?: string,
+  ): Promise<Invoice> {
+    this.logger.log(
+      `Creating invoice for issuer: ${createInvoiceDto.issuerId}`,
+    );
+
+    const issuer = await this.issuerRepository.findOne({
+      where: { id: createInvoiceDto.issuerId, isActive: true },
+    });
+
+    if (!issuer) {
+      throw new NotFoundException('Emisor no encontrado');
+    }
+
+    const establecimiento = providedEstablecimiento || issuer.establecimiento;
+    const puntoEmision = providedPuntoEmision || issuer.puntoEmision;
+    const secuencial = providedSecuencial
+      ? await this.normalizeAndValidateSecuencial(
+          issuer.id,
+          establecimiento,
+          puntoEmision,
+          providedSecuencial,
+        )
+      : await this.generateSecuencial(
+          issuer.id,
+          establecimiento,
+          puntoEmision,
+        );
+
+    this.validateInvoiceTotals(createInvoiceDto);
+
+    const {
+      detalles,
+      pagos,
+      establecimiento: _providedEstablecimiento,
+      puntoEmision: _providedPuntoEmision,
+      secuencial: _providedSecuencial,
+      claveAcceso: _providedClaveAcceso,
+      autorizar: _autorizar,
+      ...invoicePayload
+    } = createInvoiceDto as CreateInvoiceDto & Partial<IssueInvoiceDto>;
+
+    const invoice = this.invoiceRepository.create({
+      ...invoicePayload,
+      establecimiento,
+      puntoEmision,
+      secuencial,
+      status: InvoiceStatus.DRAFT,
+      moneda: createInvoiceDto.moneda || 'DOLAR',
+      totalDescuento: createInvoiceDto.totalDescuento || 0,
+      propina: createInvoiceDto.propina || 0,
+    });
+
+    invoice.issuer = issuer;
+    invoice.claveAcceso = await this.resolveClaveAcceso(
+      invoice,
+      providedClaveAcceso,
+    );
+
+    const savedInvoice = await this.invoiceRepository.save(invoice);
+
+    for (const detalleDto of detalles) {
+      const { impuestos, ...detallePayload } = detalleDto;
+      const detalle = this.detailRepository.create({
+        ...detallePayload,
+        invoiceId: savedInvoice.id,
+      });
+      await this.detailRepository.save(detalle);
+
+      for (const impuestoDto of impuestos) {
+        const impuesto = this.detailTaxRepository.create({
+          ...impuestoDto,
+          detailId: detalle.id,
+        });
+        await this.detailTaxRepository.save(impuesto);
+      }
+    }
+
+    for (const pagoDto of pagos) {
+      const pago = this.paymentRepository.create({
+        ...pagoDto,
+        invoiceId: savedInvoice.id,
+      });
+      await this.paymentRepository.save(pago);
+    }
+
+    await this.createEvent(
+      savedInvoice.id,
+      InvoiceEventType.CREATED,
+      providedSecuencial
+        ? 'Factura creada con secuencial externo'
+        : 'Factura creada',
+    );
+
+    this.logger.log(`Invoice created with ID: ${savedInvoice.id}`);
+
+    return this.findOneEntity(savedInvoice.id);
+  }
+
   /**
    * Validar totales de la factura
    */
@@ -883,6 +1031,8 @@ export class InvoiceService {
       id: invoice.id,
       issuerId: invoice.issuerId,
       secuencial: invoice.secuencial,
+      establecimiento: invoice.establecimiento,
+      puntoEmision: invoice.puntoEmision,
       claveAcceso: invoice.claveAcceso,
       fechaEmision: invoice.fechaEmision,
       clienteTipoIdentificacion: invoice.clienteTipoIdentificacion,

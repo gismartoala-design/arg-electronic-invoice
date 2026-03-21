@@ -21,7 +21,9 @@ import { InvoiceArtifact } from './invoice-artifact.entity';
 import { InvoiceEvent } from './invoice-event.entity';
 
 @Entity('invoice')
-@Index(['issuerId', 'secuencial'], { unique: true })
+@Index(['issuerId', 'establecimiento', 'puntoEmision', 'secuencial'], {
+  unique: true,
+})
 export class Invoice {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -35,6 +37,12 @@ export class Invoice {
 
   @Column({ type: 'varchar', length: 9 })
   secuencial: string;
+
+  @Column({ type: 'varchar', length: 3 })
+  establecimiento: string;
+
+  @Column({ type: 'varchar', length: 3 })
+  puntoEmision: string;
 
   @Column({ type: 'varchar', length: 49, unique: true, nullable: true })
   claveAcceso: string;

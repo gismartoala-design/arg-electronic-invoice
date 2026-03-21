@@ -1,5 +1,6 @@
 export {
   CreateInvoiceDto,
+  IssueInvoiceDto,
   InvoiceDetailDto,
   InvoiceDetailTaxDto,
   InvoicePaymentDto,
