@@ -11,7 +11,7 @@ import { ArtifactType } from './enums';
 import { Invoice } from './invoice.entity';
 
 @Entity('invoice_artifact')
-@Index(['invoiceId', 'type'])
+@Index(['invoiceId', 'type'], { unique: true })
 export class InvoiceArtifact {
   @PrimaryGeneratedColumn('uuid')
   id: string;

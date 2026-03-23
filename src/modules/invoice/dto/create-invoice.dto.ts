@@ -2,11 +2,9 @@ import {
   IsString,
   IsNumber,
   IsOptional,
-  IsBoolean,
   Min,
   MaxLength,
   IsArray,
-  Matches,
   ValidateNested,
   ArrayMinSize,
 } from 'class-validator';
@@ -206,58 +204,4 @@ export class CreateInvoiceDto {
   @ValidateNested({ each: true })
   @Type(() => InvoicePaymentDto)
   pagos: InvoicePaymentDto[];
-}
-
-export class IssueInvoiceDto extends CreateInvoiceDto {
-  @ApiProperty({
-    description: 'Código de establecimiento definido por el ERP/cliente',
-    example: '001',
-  })
-  @IsString()
-  @Matches(/^\d{3}$/, {
-    message: 'establecimiento debe contener exactamente 3 dígitos numéricos',
-  })
-  establecimiento: string;
-
-  @ApiProperty({
-    description: 'Código de punto de emisión definido por el ERP/cliente',
-    example: '002',
-  })
-  @IsString()
-  @Matches(/^\d{3}$/, {
-    message: 'puntoEmision debe contener exactamente 3 dígitos numéricos',
-  })
-  puntoEmision: string;
-
-  @ApiProperty({
-    description: 'Secuencial fiscal definido por el ERP/cliente',
-    example: '000000123',
-  })
-  @IsString()
-  @Matches(/^\d{1,9}$/, {
-    message: 'secuencial debe contener entre 1 y 9 dígitos numéricos',
-  })
-  secuencial: string;
-
-  @ApiPropertyOptional({
-    description:
-      'Clave de acceso generada por el ERP/cliente. Si no se envía, el servicio la genera localmente',
-    example: '2103202601179141513000110010020000001231234567815',
-  })
-  @IsOptional()
-  @IsString()
-  @Matches(/^\d{49}$/, {
-    message: 'claveAcceso debe contener exactamente 49 dígitos numéricos',
-  })
-  claveAcceso?: string;
-
-  @ApiPropertyOptional({
-    description:
-      'Si es true o se omite, la factura se registra y luego se autoriza en el mismo flujo',
-    example: true,
-    default: true,
-  })
-  @IsOptional()
-  @IsBoolean()
-  autorizar?: boolean;
 }
