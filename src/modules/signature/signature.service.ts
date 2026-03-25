@@ -22,6 +22,15 @@ export class SignatureService {
   private readonly logger = new Logger(SignatureService.name);
   private readonly signaturePath: string;
   private readonly signaturePassword: string;
+  private readonly certificateCache = new Map<
+    string,
+    {
+      certPem: string;
+      keyPem: string;
+      certificate: forge.pki.Certificate;
+      privateKey: forge.pki.rsa.PrivateKey;
+    }
+  >();
 
   constructor(
     private readonly configService: ConfigService,
@@ -222,14 +231,11 @@ export class SignatureService {
     certPath?: string,
     certPassword?: string,
   ): Promise<{ certPem: string; keyPem: string }> {
-    const { certificate, privateKey } = await this.loadCertificateSync(
+    const { certPem, keyPem } = await this.loadCertificateBundle(
       certPath,
       certPassword,
     );
-    return {
-      certPem: forge.pki.certificateToPem(certificate),
-      keyPem: forge.pki.privateKeyToPem(privateKey),
-    };
+    return { certPem, keyPem };
   }
 
   private async loadCertificate(
@@ -239,7 +245,42 @@ export class SignatureService {
     privateKey: forge.pki.rsa.PrivateKey;
     certificate: forge.pki.Certificate;
   }> {
-    return this.loadCertificateSync(certPath, certPassword);
+    const { certificate, privateKey } = await this.loadCertificateBundle(
+      certPath,
+      certPassword,
+    );
+    return { certificate, privateKey };
+  }
+
+  private async loadCertificateBundle(
+    certPath?: string,
+    certPassword?: string,
+  ): Promise<{
+    certPem: string;
+    keyPem: string;
+    certificate: forge.pki.Certificate;
+    privateKey: forge.pki.rsa.PrivateKey;
+  }> {
+    const cacheKey = `${certPath || this.signaturePath}::${certPassword || this.signaturePassword}`;
+    const cached = this.certificateCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const { certificate, privateKey } = await this.loadCertificateSync(
+      certPath,
+      certPassword,
+    );
+
+    const bundle = {
+      certPem: forge.pki.certificateToPem(certificate),
+      keyPem: forge.pki.privateKeyToPem(privateKey),
+      certificate,
+      privateKey,
+    };
+
+    this.certificateCache.set(cacheKey, bundle);
+    return bundle;
   }
 
   private async loadCertificateSync(

@@ -220,6 +220,12 @@ export class InvoiceService {
         xmlContent = fileBuffer.toString('utf8');
       }
 
+      if (!xmlContent) {
+        throw new InternalServerErrorException(
+          `No se pudo recuperar el XML autorizado de la factura ${invoiceId}`,
+        );
+      }
+
       const buffer = await this.pdfGeneratorService.generateRideFromXml(
         xmlContent,
         {
@@ -273,7 +279,7 @@ export class InvoiceService {
 
     return {
       buffer,
-      mimeType: artifact.mimeType,
+      mimeType: artifact.mimeType || 'application/octet-stream',
       filename: `${invoiceId}_${type}.${extension}`,
     };
   }
@@ -284,10 +290,6 @@ export class InvoiceService {
   async authorize(id: string): Promise<InvoiceResponseDto> {
     this.logger.log(`Authorizing invoice: ${id}`);
     const invoice = await this.findOneEntity(id);
-
-    this.logger.debug('=== FACTURA OBTENIDA PARA AUTORIZACIÓN ===');
-    this.logger.debug(invoice);
-    this.logger.debug('=== FIN FACTURA OBTENIDA ===');
 
     if (invoice.status === InvoiceStatus.AUTHORIZED) {
       throw new BadRequestException('La factura ya está autorizada');
@@ -563,7 +565,7 @@ export class InvoiceService {
   /**
    * Generar XML de la factura
    */
-  private async generateXml(invoice: Invoice): Promise<string> {
+  private generateXml(invoice: Invoice): string {
     const issuer = invoice.issuer;
 
     const invoiceData = {
@@ -590,7 +592,7 @@ export class InvoiceService {
         direccionComprador: invoice.clienteDireccion,
         totalSinImpuestos: invoice.totalSinImpuestos,
         totalDescuento: invoice.totalDescuento,
-        totalConImpuestos: await this.calculateTotalImpuestos(invoice.id),
+        totalConImpuestos: this.calculateTotalImpuestos(invoice),
         propina: invoice.propina,
         importeTotal: invoice.importeTotal,
         moneda: invoice.moneda,
@@ -606,12 +608,8 @@ export class InvoiceService {
   /**
    * Calcular total de impuestos
    */
-  private async calculateTotalImpuestos(invoiceId: string): Promise<any[]> {
-    const details = await this.detailRepository.find({
-      where: { invoiceId },
-      relations: ['impuestos'],
-    });
-
+  private calculateTotalImpuestos(invoice: Invoice): any[] {
+    const details = invoice.detalles || [];
     const impuestosMap = new Map();
 
     for (const detail of details) {
@@ -643,16 +641,16 @@ export class InvoiceService {
     content: string,
     mimeType: string,
   ): Promise<void> {
-    const hash = crypto.createHash('sha256').update(content).digest('hex');
-
-    const artifactData: any = {
+    const artifactData: Partial<InvoiceArtifact> = {
       invoiceId,
       type,
-      hashSha256: hash,
+      hashSha256: crypto.createHash('sha256').update(content).digest('hex'),
       mimeType,
       size: Buffer.byteLength(content, 'utf8'),
+      storageKey: null,
+      content: null,
     };
-
+    this.logger.debug(`Saving artifact for invoice ${invoiceId}, type ${type}, size ${artifactData.size} bytes, hash ${artifactData.hashSha256}`);
     // Lógica de almacenamiento:
     // - XMLs y JSONs: guardar en DB (columna content)
     // - PDFs: guardar en Cloud Storage (columna storageKey)
@@ -666,18 +664,8 @@ export class InvoiceService {
       artifactData.content = content;
       // No usar filesystem para XMLs/JSONs
     }
-
-    const existingArtifact = await this.artifactRepository.findOne({
-      where: { invoiceId, type },
-    });
-
-    if (existingArtifact) {
-      await this.artifactRepository.update(existingArtifact.id, artifactData);
-      return;
-    }
-
-    const artifact = this.artifactRepository.create(artifactData);
-    await this.artifactRepository.save(artifact);
+    console.log(`Saving artifact for invoice ${invoiceId}, type ${type}, size ${artifactData.size} bytes, hash ${artifactData.hashSha256}`);
+    await this.artifactRepository.upsert(artifactData, ['invoiceId', 'type']);
   }
 
   /**
@@ -816,10 +804,10 @@ export class InvoiceService {
   }
 
   private async generateAndPersistUnsignedXml(invoice: Invoice): Promise<string> {
-    const xmlUnsigned = await this.generateXml(invoice);
-    this.logger.debug('=== XML SIN FIRMAR ===');
-    this.logger.debug(xmlUnsigned);
-    this.logger.debug('=== FIN XML SIN FIRMAR ===');
+    const xmlUnsigned = this.generateXml(invoice);
+    this.logger.debug(
+      `XML sin firmar generado para invoice ${invoice.id} (${Buffer.byteLength(xmlUnsigned, 'utf8')} bytes)`,
+    );
 
     await this.saveArtifact(
       invoice.id,
@@ -827,7 +815,7 @@ export class InvoiceService {
       xmlUnsigned,
       'application/xml',
     );
-
+    
     if (invoice.status === InvoiceStatus.DRAFT) {
       invoice.status = InvoiceStatus.PENDING_SIGNATURE;
       invoice.lastError = null;
@@ -847,9 +835,9 @@ export class InvoiceService {
       invoice.issuer.certPasswordEncrypted,
     );
 
-    this.logger.debug('=== XML FIRMADO ===');
-    this.logger.debug(xmlSigned);
-    this.logger.debug('=== FIN XML FIRMADO ===');
+    this.logger.debug(
+      `XML firmado generado para invoice ${invoice.id} (${Buffer.byteLength(xmlSigned, 'utf8')} bytes)`,
+    );
 
     await this.saveArtifact(
       invoice.id,
