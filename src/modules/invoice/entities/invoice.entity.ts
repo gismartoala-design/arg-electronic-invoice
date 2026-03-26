@@ -118,7 +118,7 @@ export class Invoice {
   retryCount: number;
 
   @Column({ type: 'text', nullable: true })
-  lastError: string;
+  lastError: string | null;
 
   // Información adicional
   @Column({ type: 'jsonb', nullable: true })

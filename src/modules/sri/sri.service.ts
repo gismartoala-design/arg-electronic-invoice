@@ -12,7 +12,6 @@ export class SriService {
   private readonly authorizationUrl: string;
   private readonly xmlParser: XMLParser;
   private readonly useMock: boolean;
-  private readonly httpsAgent: https.Agent;
 
   constructor(
     private readonly configService: ConfigService,
@@ -24,13 +23,6 @@ export class SriService {
       this.configService.get<string>('sri.authorizationUrl') || '';
     this.useMock =
       this.configService.get<string>('app.nodeEnv') === 'development';
-
-    // Configurar agente HTTPS para evitar problemas de conexión (ECONNRESET)
-    this.httpsAgent = new https.Agent({
-      rejectUnauthorized: false, // Permisivo con certificados
-      keepAlive: false, // No mantener conexiones vivas
-      family: 4, // Forzar IPv4
-    });
 
     // Configurar parser XML para respuestas SOAP
     this.xmlParser = new XMLParser({
@@ -71,12 +63,8 @@ export class SriService {
           headers: {
             'Content-Type': 'text/xml; charset=utf-8',
             SOAPAction: '',
-            Connection: 'close',
-            'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
           },
           timeout: 60000, // 60 segundos
-          httpsAgent: this.httpsAgent,
         }),
       );
 
@@ -98,7 +86,7 @@ export class SriService {
       // Intentar extraer error específico del SRI (SOAP Fault)
       const fault = this.extractSoapFault(error);
       if (fault) {
-        this.logger.error(`🔥 SRI FAULT: ${fault}`);
+        this.logger.error(`SRI FAULT: ${fault}`);
 
         if (
           fault.includes('GenericJDBCException') ||
@@ -141,12 +129,8 @@ export class SriService {
           headers: {
             'Content-Type': 'text/xml; charset=utf-8',
             SOAPAction: '',
-            Connection: 'close',
-            'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
           },
           timeout: 60000, // 60 segundos
-          httpsAgent: this.httpsAgent,
         }),
       );
 
@@ -193,9 +177,9 @@ export class SriService {
    * Construir envelope SOAP para recepción
    */
   private buildReceptionEnvelope(xml: string): string {
-    this.logger.debug('=== XML QUE SE ENVIARÁ AL SRI ===');
-    this.logger.debug(xml);
-    this.logger.debug('=== FIN XML ===');
+    this.logger.debug(
+      `Preparando XML para recepción SRI (${Buffer.byteLength(xml, 'utf8')} bytes)`,
+    );
 
     // El método validarComprobante del SRI recibe el comprobante como base64Binary.
     // Enviar XML plano en CDATA provoca errores de conversión (error 35).
@@ -469,13 +453,7 @@ export class SriService {
       if (this.receptionUrl && !this.useMock) {
         const response = await firstValueFrom(
           this.httpService.get(this.receptionUrl.replace('?wsdl', ''), {
-            timeout: 5000,
-            headers: {
-              Connection: 'close',
-              'User-Agent':
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            },
-            httpsAgent: this.httpsAgent,
+            timeout: 5000
           }),
         );
         result.reception = response.status === 200;
@@ -494,12 +472,6 @@ export class SriService {
         const response = await firstValueFrom(
           this.httpService.get(this.authorizationUrl.replace('?wsdl', ''), {
             timeout: 5000,
-            headers: {
-              Connection: 'close',
-              'User-Agent':
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            },
-            httpsAgent: this.httpsAgent,
           }),
         );
         result.authorization = response.status === 200;

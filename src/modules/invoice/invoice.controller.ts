@@ -15,6 +15,7 @@ import type { Response } from 'express';
 import {
   CreateInvoiceDto,
   IssueInvoiceDto,
+  IssueInvoiceResponseDto,
   QueryInvoiceDto,
   InvoiceResponseDto,
   PaginatedInvoiceResponseDto,
@@ -43,17 +44,36 @@ export class InvoiceController {
   @Post('issue')
   @ApiOperation({
     summary:
-      'Registrar factura con secuencial externo y autorizarla opcionalmente',
+      'Recibir factura externa del ERP/POS, firmarla y autorizarla en el SRI',
   })
   @ApiResponse({
     status: 201,
-    description: 'Factura registrada y procesada exitosamente',
-    type: InvoiceResponseDto,
+    description:
+      'Factura externa registrada y procesada dentro del flujo de autorización fiscal',
+    type: IssueInvoiceResponseDto,
   })
   @ApiResponse({ status: 400, description: 'Datos inválidos' })
   @ApiResponse({ status: 404, description: 'Emisor no encontrado' })
-  issue(@Body() issueInvoiceDto: IssueInvoiceDto): Promise<InvoiceResponseDto> {
+  issue(
+    @Body() issueInvoiceDto: IssueInvoiceDto,
+  ): Promise<IssueInvoiceResponseDto> {
     return this.invoiceService.issue(issueInvoiceDto);
+  }
+
+  @Get('by-access-key/:claveAcceso')
+  @ApiOperation({
+    summary: 'Obtener factura por clave de acceso del ERP/POS o del SRI',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Factura encontrada por clave de acceso',
+    type: IssueInvoiceResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Factura no encontrada' })
+  findOneByClaveAcceso(
+    @Param('claveAcceso') claveAcceso: string,
+  ): Promise<IssueInvoiceResponseDto> {
+    return this.invoiceService.findOneByClaveAcceso(claveAcceso);
   }
 
   @Get()
@@ -107,6 +127,40 @@ export class InvoiceController {
   ): Promise<StreamableFile> {
     const { buffer, mimeType, filename } =
       await this.invoiceService.getArtifact(id, type);
+
+    res.set({
+      'Content-Type': mimeType,
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    });
+
+    return new StreamableFile(buffer);
+  }
+
+  @Get('by-access-key/:claveAcceso/artifacts/:type')
+  @ApiOperation({
+    summary:
+      'Obtener un artefacto de la factura usando la clave de acceso como llave funcional',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Archivo descargado exitosamente',
+    content: {
+      'application/pdf': { schema: { type: 'string', format: 'binary' } },
+      'application/xml': { schema: { type: 'string', format: 'binary' } },
+      'application/json': { schema: { type: 'string', format: 'binary' } },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Factura o artefacto no encontrado',
+  })
+  async getArtifactByClaveAcceso(
+    @Param('claveAcceso') claveAcceso: string,
+    @Param('type') type: ArtifactType,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const { buffer, mimeType, filename } =
+      await this.invoiceService.getArtifactByClaveAcceso(claveAcceso, type);
 
     res.set({
       'Content-Type': mimeType,

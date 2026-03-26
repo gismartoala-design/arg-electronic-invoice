@@ -6,7 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, FindOptionsWhere } from 'typeorm';
+import { Repository, Between, EntityManager, FindOptionsWhere } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import {
@@ -27,6 +27,7 @@ import {
 import {
   CreateInvoiceDto,
   IssueInvoiceDto,
+  IssueInvoiceResponseDto,
   QueryInvoiceDto,
   InvoiceResponseDto,
   PaginatedInvoiceResponseDto,
@@ -89,10 +90,25 @@ export class InvoiceService {
   }
 
   /**
-   * Registrar factura con secuencial externo y autorizarla opcionalmente.
-   * El ERP conserva la propiedad del secuencial y este servicio orquesta el ciclo SRI.
+   * Recibir factura externa del ERP/POS y procesarla en el flujo de autorización fiscal.
+   * La clave de acceso y el secuencial son propiedad del sistema emisor externo.
    */
-  async issue(issueInvoiceDto: IssueInvoiceDto): Promise<InvoiceResponseDto> {
+  async issue(
+    issueInvoiceDto: IssueInvoiceDto,
+  ): Promise<IssueInvoiceResponseDto> {
+    const existingInvoice = await this.findOneEntityByClaveAcceso(
+      issueInvoiceDto.claveAcceso,
+    );
+
+    if (existingInvoice) {
+      this.logger.log(
+        `Invoice issue request is idempotent. Reusing invoice ${existingInvoice.id} for claveAcceso ${issueInvoiceDto.claveAcceso}`,
+      );
+
+      const resumedInvoice = await this.resumeIssueFlow(existingInvoice);
+      return this.mapIssueResponseDto(resumedInvoice);
+    }
+
     const invoice = await this.createInvoiceRecord(
       issueInvoiceDto,
       issueInvoiceDto.establecimiento,
@@ -101,11 +117,8 @@ export class InvoiceService {
       issueInvoiceDto.claveAcceso,
     );
 
-    if (issueInvoiceDto.autorizar === false) {
-      return this.mapToResponseDto(invoice);
-    }
-
-    return this.authorize(invoice.id);
+    const processedInvoice = await this.processAuthorizationFlow(invoice);
+    return this.mapIssueResponseDto(processedInvoice);
   }
 
   /**
@@ -164,6 +177,23 @@ export class InvoiceService {
   }
 
   /**
+   * Obtener una factura por clave de acceso
+   */
+  async findOneByClaveAcceso(
+    claveAcceso: string,
+  ): Promise<IssueInvoiceResponseDto> {
+    const invoice = await this.findOneEntityByClaveAcceso(claveAcceso);
+
+    if (!invoice) {
+      throw new NotFoundException(
+        `Factura con claveAcceso ${claveAcceso} no encontrada`,
+      );
+    }
+
+    return this.mapIssueResponseDto(invoice);
+  }
+
+  /**
    * Obtener un artefacto (XML, PDF, respuesta SRI) de una factura
    */
   async getArtifact(
@@ -188,6 +218,12 @@ export class InvoiceService {
       if (!xmlContent && xmlArtifact.storageKey) {
         const fileBuffer = await this.storageService.get(xmlArtifact.storageKey);
         xmlContent = fileBuffer.toString('utf8');
+      }
+
+      if (!xmlContent) {
+        throw new InternalServerErrorException(
+          `No se pudo recuperar el XML autorizado de la factura ${invoiceId}`,
+        );
       }
 
       const buffer = await this.pdfGeneratorService.generateRideFromXml(
@@ -243,9 +279,30 @@ export class InvoiceService {
 
     return {
       buffer,
-      mimeType: artifact.mimeType,
+      mimeType: artifact.mimeType || 'application/octet-stream',
       filename: `${invoiceId}_${type}.${extension}`,
     };
+  }
+
+  /**
+   * Obtener un artefacto usando la clave de acceso como llave funcional
+   */
+  async getArtifactByClaveAcceso(
+    claveAcceso: string,
+    type: ArtifactType,
+  ): Promise<{ buffer: Buffer; mimeType: string; filename: string }> {
+    const invoice = await this.invoiceRepository.findOne({
+      where: { claveAcceso },
+      select: { id: true },
+    });
+
+    if (!invoice) {
+      throw new NotFoundException(
+        `Factura con claveAcceso ${claveAcceso} no encontrada`,
+      );
+    }
+
+    return this.getArtifact(invoice.id, type);
   }
 
   /**
@@ -253,155 +310,16 @@ export class InvoiceService {
    */
   async authorize(id: string): Promise<InvoiceResponseDto> {
     this.logger.log(`Authorizing invoice: ${id}`);
-
-    const invoice = await this.invoiceRepository.findOne({
-      where: { id },
-      relations: ['detalles', 'detalles.impuestos', 'pagos', 'issuer'],
-    });
-
-    this.logger.debug('=== FACTURA OBTENIDA PARA AUTORIZACIÓN ===');
-    this.logger.debug(invoice);
-    this.logger.debug('=== FIN FACTURA OBTENIDA ===');
-
-    if (!invoice) {
-      throw new NotFoundException(`Factura con ID ${id} no encontrada`);
-    }
+    const invoice = await this.findOneEntity(id);
 
     if (invoice.status === InvoiceStatus.AUTHORIZED) {
       throw new BadRequestException('La factura ya está autorizada');
     }
 
-    this.validateInvoiceEntityTotals(invoice);
+    const processedInvoice = await this.processAuthorizationFlow(invoice);
+    this.logger.log(`Invoice ${id} authorization process completed`);
 
-    try {
-      // Paso 1: Generar clave de acceso si no existe
-      if (!invoice.claveAcceso) {
-        invoice.claveAcceso = await this.generateClaveAcceso(invoice);
-        await this.invoiceRepository.save(invoice);
-      }
-
-      // Paso 2: Generar XML
-      const xmlUnsigned = await this.generateXml(invoice);
-      this.logger.debug('=== XML SIN FIRMAR ===');
-      this.logger.debug(xmlUnsigned);
-      this.logger.debug('=== FIN XML SIN FIRMAR ===');
-
-      await this.saveArtifact(
-        invoice.id,
-        ArtifactType.XML_UNSIGNED,
-        xmlUnsigned,
-        'application/xml',
-      );
-
-      invoice.status = InvoiceStatus.PENDING_SIGNATURE;
-      await this.invoiceRepository.save(invoice);
-
-      // Paso 3: Firmar XML usando certificado del issuer
-      const xmlSigned = await this.signatureService.signXml(
-        xmlUnsigned,
-        invoice.issuer.certP12Path,
-        invoice.issuer.certPasswordEncrypted,
-      );
-
-      this.logger.debug('=== XML FIRMADO ===');
-      this.logger.debug(xmlSigned);
-      this.logger.debug('=== FIN XML FIRMADO ===');
-
-      await this.saveArtifact(
-        invoice.id,
-        ArtifactType.XML_SIGNED,
-        xmlSigned,
-        'application/xml',
-      );
-
-      invoice.status = InvoiceStatus.SIGNED;
-      await this.invoiceRepository.save(invoice);
-      await this.createEvent(
-        invoice.id,
-        InvoiceEventType.SIGNED,
-        'Factura firmada',
-      );
-
-      // Paso 4: Enviar al SRI para recepción
-      invoice.status = InvoiceStatus.SENDING;
-      invoice.sriReceptionStatus = SriReceptionStatus.PENDING;
-      await this.invoiceRepository.save(invoice);
-
-      const receptionResponse = await this.sriService.sendToReception({
-        claveAcceso: invoice.claveAcceso,
-        xml: xmlSigned,
-      });
-
-      await this.saveArtifact(
-        invoice.id,
-        ArtifactType.RESPONSE_RECEPTION,
-        JSON.stringify(receptionResponse),
-        'application/json',
-      );
-
-      if (receptionResponse.estado === 'RECIBIDA') {
-        invoice.sriReceptionStatus = SriReceptionStatus.RECEIVED;
-        await this.createEvent(
-          invoice.id,
-          InvoiceEventType.RECEIVED,
-          'Recibida por el SRI',
-        );
-      } else {
-        invoice.sriReceptionStatus = SriReceptionStatus.DEVUELTA;
-
-        // Extraer mensaje de error del primer comprobante
-        let errorMessage = 'Error desconocido en recepción';
-        if (
-          receptionResponse.comprobantes &&
-          receptionResponse.comprobantes.length > 0
-        ) {
-          const comprobante = receptionResponse.comprobantes[0];
-          if (comprobante.mensajes && comprobante.mensajes.length > 0) {
-            const primerMensaje = comprobante.mensajes[0];
-            errorMessage = `[${primerMensaje.identificador}] ${primerMensaje.mensaje}`;
-            if (primerMensaje.informacionAdicional) {
-              errorMessage += ` - ${primerMensaje.informacionAdicional}`;
-            }
-          }
-        }
-
-        invoice.lastError = errorMessage;
-        await this.createEvent(
-          invoice.id,
-          InvoiceEventType.ERROR,
-          `Error en recepción: ${errorMessage}`,
-        );
-      }
-
-      await this.invoiceRepository.save(invoice);
-
-      // Paso 5: Consultar autorización
-      if (invoice.sriReceptionStatus === SriReceptionStatus.RECEIVED) {
-        await this.checkAuthorization(invoice.id);
-      }
-
-      this.logger.log(`Invoice ${id} authorization process completed`);
-
-      return this.mapToResponseDto(await this.findOneEntity(id));
-    } catch (error) {
-      this.logger.error(`Error authorizing invoice ${id}: ${error.message}`);
-
-      invoice.status = InvoiceStatus.ERROR;
-      invoice.lastError = error.message;
-      invoice.retryCount += 1;
-      await this.invoiceRepository.save(invoice);
-
-      await this.createEvent(
-        invoice.id,
-        InvoiceEventType.ERROR,
-        `Error: ${error.message}`,
-        { error: error.stack },
-      );
-
-      throw new InternalServerErrorException(
-        `Error al autorizar factura: ${error.message}`,
-      );
-    }
+    return this.mapToResponseDto(processedInvoice);
   }
 
   /**
@@ -517,7 +435,7 @@ export class InvoiceService {
       'Reintentando autorización',
     );
 
-    return this.authorize(id);
+    return this.mapToResponseDto(await this.processAuthorizationFlow(invoice));
   }
 
   /**
@@ -527,8 +445,11 @@ export class InvoiceService {
     issuerId: string,
     establecimiento: string,
     puntoEmision: string,
+    manager: EntityManager = this.invoiceRepository.manager,
   ): Promise<string> {
-    const lastInvoice = await this.invoiceRepository.findOne({
+    const invoiceRepository = manager.getRepository(Invoice);
+
+    const lastInvoice = await invoiceRepository.findOne({
       where: { issuerId, establecimiento, puntoEmision },
       order: { secuencial: 'DESC' },
     });
@@ -546,6 +467,7 @@ export class InvoiceService {
     establecimiento: string,
     puntoEmision: string,
     secuencial: string,
+    manager: EntityManager = this.invoiceRepository.manager,
   ): Promise<string> {
     const normalizedSecuencial = secuencial.trim().padStart(9, '0');
 
@@ -555,7 +477,9 @@ export class InvoiceService {
       );
     }
 
-    const existingInvoice = await this.invoiceRepository.findOne({
+    const invoiceRepository = manager.getRepository(Invoice);
+
+    const existingInvoice = await invoiceRepository.findOne({
       where: {
         issuerId,
         establecimiento,
@@ -603,6 +527,7 @@ export class InvoiceService {
   private async resolveClaveAcceso(
     invoice: Invoice,
     providedClaveAcceso?: string,
+    manager: EntityManager = this.invoiceRepository.manager,
   ): Promise<string> {
     if (!providedClaveAcceso) {
       return this.generateClaveAcceso(invoice);
@@ -643,7 +568,9 @@ export class InvoiceService {
       );
     }
 
-    const existingInvoice = await this.invoiceRepository.findOne({
+    const invoiceRepository = manager.getRepository(Invoice);
+
+    const existingInvoice = await invoiceRepository.findOne({
       where: { claveAcceso },
     });
 
@@ -659,7 +586,7 @@ export class InvoiceService {
   /**
    * Generar XML de la factura
    */
-  private async generateXml(invoice: Invoice): Promise<string> {
+  private generateXml(invoice: Invoice): string {
     const issuer = invoice.issuer;
 
     const invoiceData = {
@@ -686,7 +613,7 @@ export class InvoiceService {
         direccionComprador: invoice.clienteDireccion,
         totalSinImpuestos: invoice.totalSinImpuestos,
         totalDescuento: invoice.totalDescuento,
-        totalConImpuestos: await this.calculateTotalImpuestos(invoice.id),
+        totalConImpuestos: this.calculateTotalImpuestos(invoice),
         propina: invoice.propina,
         importeTotal: invoice.importeTotal,
         moneda: invoice.moneda,
@@ -702,12 +629,8 @@ export class InvoiceService {
   /**
    * Calcular total de impuestos
    */
-  private async calculateTotalImpuestos(invoiceId: string): Promise<any[]> {
-    const details = await this.detailRepository.find({
-      where: { invoiceId },
-      relations: ['impuestos'],
-    });
-
+  private calculateTotalImpuestos(invoice: Invoice): any[] {
+    const details = invoice.detalles || [];
     const impuestosMap = new Map();
 
     for (const detail of details) {
@@ -739,16 +662,16 @@ export class InvoiceService {
     content: string,
     mimeType: string,
   ): Promise<void> {
-    const hash = crypto.createHash('sha256').update(content).digest('hex');
-
-    const artifactData: any = {
+    const artifactData: Partial<InvoiceArtifact> = {
       invoiceId,
       type,
-      hashSha256: hash,
+      hashSha256: crypto.createHash('sha256').update(content).digest('hex'),
       mimeType,
       size: Buffer.byteLength(content, 'utf8'),
+      storageKey: null,
+      content: null,
     };
-
+    this.logger.debug(`Saving artifact for invoice ${invoiceId}, type ${type}, size ${artifactData.size} bytes, hash ${artifactData.hashSha256}`);
     // Lógica de almacenamiento:
     // - XMLs y JSONs: guardar en DB (columna content)
     // - PDFs: guardar en Cloud Storage (columna storageKey)
@@ -762,10 +685,8 @@ export class InvoiceService {
       artifactData.content = content;
       // No usar filesystem para XMLs/JSONs
     }
-
-    const artifact = this.artifactRepository.create(artifactData);
-
-    await this.artifactRepository.save(artifact);
+    console.log(`Saving artifact for invoice ${invoiceId}, type ${type}, size ${artifactData.size} bytes, hash ${artifactData.hashSha256}`);
+    await this.artifactRepository.upsert(artifactData, ['invoiceId', 'type']);
   }
 
   /**
@@ -821,6 +742,223 @@ export class InvoiceService {
     return invoice;
   }
 
+  private async findOneEntityByClaveAcceso(
+    claveAcceso: string,
+  ): Promise<Invoice | null> {
+    return this.invoiceRepository.findOne({
+      where: { claveAcceso },
+      relations: ['detalles', 'detalles.impuestos', 'pagos', 'issuer'],
+    });
+  }
+
+  private async processAuthorizationFlow(invoice: Invoice): Promise<Invoice> {
+    this.validateInvoiceEntityTotals(invoice);
+
+    try {
+      if (!invoice.claveAcceso) {
+        invoice.claveAcceso = await this.generateClaveAcceso(invoice);
+        await this.invoiceRepository.save(invoice);
+      }
+
+      const xmlUnsigned =
+        (await this.getArtifactContent(invoice.id, ArtifactType.XML_UNSIGNED)) ||
+        (await this.generateAndPersistUnsignedXml(invoice));
+
+      const xmlSigned =
+        (await this.getArtifactContent(invoice.id, ArtifactType.XML_SIGNED)) ||
+        (await this.signAndPersistXml(invoice, xmlUnsigned));
+
+      if (invoice.sriReceptionStatus !== SriReceptionStatus.RECEIVED) {
+        const receptionAccepted = await this.sendSignedXmlToSri(invoice, xmlSigned);
+
+        if (!receptionAccepted) {
+          return this.findOneEntity(invoice.id);
+        }
+      }
+
+      if (
+        invoice.status !== InvoiceStatus.AUTHORIZED &&
+        invoice.sriAuthorizationStatus !== SriAuthorizationStatus.AUTORIZADO
+      ) {
+        await this.checkAuthorization(invoice.id);
+      }
+
+      return this.findOneEntity(invoice.id);
+    } catch (error) {
+      this.logger.error(`Error authorizing invoice ${invoice.id}: ${error.message}`);
+
+      invoice.status = InvoiceStatus.ERROR;
+      invoice.lastError = error.message;
+      invoice.retryCount += 1;
+      await this.invoiceRepository.save(invoice);
+
+      await this.createEvent(
+        invoice.id,
+        InvoiceEventType.ERROR,
+        `Error: ${error.message}`,
+        { error: error.stack },
+      );
+
+      throw new InternalServerErrorException(
+        `Error al autorizar factura: ${error.message}`,
+      );
+    }
+  }
+
+  private async resumeIssueFlow(invoice: Invoice): Promise<Invoice> {
+    if (
+      invoice.status === InvoiceStatus.AUTHORIZED ||
+      invoice.status === InvoiceStatus.NOT_AUTHORIZED ||
+      invoice.status === InvoiceStatus.CANCELLED
+    ) {
+      return invoice;
+    }
+
+    if (
+      invoice.sriReceptionStatus === SriReceptionStatus.RECEIVED &&
+      invoice.sriAuthorizationStatus === SriAuthorizationStatus.AUTORIZADO
+    ) {
+      return invoice;
+    }
+
+    return this.processAuthorizationFlow(invoice);
+  }
+
+  private async generateAndPersistUnsignedXml(invoice: Invoice): Promise<string> {
+    const xmlUnsigned = this.generateXml(invoice);
+    this.logger.debug(
+      `XML sin firmar generado para invoice ${invoice.id} (${Buffer.byteLength(xmlUnsigned, 'utf8')} bytes)`,
+    );
+
+    await this.saveArtifact(
+      invoice.id,
+      ArtifactType.XML_UNSIGNED,
+      xmlUnsigned,
+      'application/xml',
+    );
+    
+    if (invoice.status === InvoiceStatus.DRAFT) {
+      invoice.status = InvoiceStatus.PENDING_SIGNATURE;
+      invoice.lastError = null;
+      await this.invoiceRepository.save(invoice);
+    }
+
+    return xmlUnsigned;
+  }
+
+  private async signAndPersistXml(
+    invoice: Invoice,
+    xmlUnsigned: string,
+  ): Promise<string> {
+    const xmlSigned = await this.signatureService.signXml(
+      xmlUnsigned,
+      invoice.issuer.certP12Path,
+      invoice.issuer.certPasswordEncrypted,
+    );
+
+    this.logger.debug(
+      `XML firmado generado para invoice ${invoice.id} (${Buffer.byteLength(xmlSigned, 'utf8')} bytes)`,
+    );
+
+    await this.saveArtifact(
+      invoice.id,
+      ArtifactType.XML_SIGNED,
+      xmlSigned,
+      'application/xml',
+    );
+
+    invoice.status = InvoiceStatus.SIGNED;
+    invoice.lastError = null;
+    await this.invoiceRepository.save(invoice);
+    await this.createEvent(invoice.id, InvoiceEventType.SIGNED, 'Factura firmada');
+
+    return xmlSigned;
+  }
+
+  private async sendSignedXmlToSri(
+    invoice: Invoice,
+    xmlSigned: string,
+  ): Promise<boolean> {
+    invoice.status = InvoiceStatus.SENDING;
+    invoice.sriReceptionStatus = SriReceptionStatus.PENDING;
+    await this.invoiceRepository.save(invoice);
+
+    const receptionResponse = await this.sriService.sendToReception({
+      claveAcceso: invoice.claveAcceso,
+      xml: xmlSigned,
+    });
+
+    await this.saveArtifact(
+      invoice.id,
+      ArtifactType.RESPONSE_RECEPTION,
+      JSON.stringify(receptionResponse),
+      'application/json',
+    );
+
+    if (receptionResponse.estado === 'RECIBIDA') {
+      invoice.sriReceptionStatus = SriReceptionStatus.RECEIVED;
+      invoice.lastError = null;
+      await this.invoiceRepository.save(invoice);
+      await this.createEvent(
+        invoice.id,
+        InvoiceEventType.RECEIVED,
+        'Recibida por el SRI',
+      );
+      return true;
+    }
+
+    let errorMessage = 'Error desconocido en recepción';
+    if (
+      receptionResponse.comprobantes &&
+      receptionResponse.comprobantes.length > 0
+    ) {
+      const comprobante = receptionResponse.comprobantes[0];
+      if (comprobante.mensajes && comprobante.mensajes.length > 0) {
+        const primerMensaje = comprobante.mensajes[0];
+        errorMessage = `[${primerMensaje.identificador}] ${primerMensaje.mensaje}`;
+        if (primerMensaje.informacionAdicional) {
+          errorMessage += ` - ${primerMensaje.informacionAdicional}`;
+        }
+      }
+    }
+
+    invoice.status = InvoiceStatus.ERROR;
+    invoice.sriReceptionStatus = SriReceptionStatus.DEVUELTA;
+    invoice.lastError = errorMessage;
+    await this.invoiceRepository.save(invoice);
+    await this.createEvent(
+      invoice.id,
+      InvoiceEventType.ERROR,
+      `Error en recepción: ${errorMessage}`,
+    );
+
+    return false;
+  }
+
+  private async getArtifactContent(
+    invoiceId: string,
+    type: ArtifactType,
+  ): Promise<string | null> {
+    const artifact = await this.artifactRepository.findOne({
+      where: { invoiceId, type },
+    });
+
+    if (!artifact) {
+      return null;
+    }
+
+    if (artifact.content) {
+      return artifact.content;
+    }
+
+    if (artifact.storageKey) {
+      const fileBuffer = await this.storageService.get(artifact.storageKey);
+      return fileBuffer.toString('utf8');
+    }
+
+    return null;
+  }
+
   private async createInvoiceRecord(
     createInvoiceDto: CreateInvoiceDto,
     providedEstablecimiento?: string,
@@ -832,29 +970,6 @@ export class InvoiceService {
       `Creating invoice for issuer: ${createInvoiceDto.issuerId}`,
     );
 
-    const issuer = await this.issuerRepository.findOne({
-      where: { id: createInvoiceDto.issuerId, isActive: true },
-    });
-
-    if (!issuer) {
-      throw new NotFoundException('Emisor no encontrado');
-    }
-
-    const establecimiento = providedEstablecimiento || issuer.establecimiento;
-    const puntoEmision = providedPuntoEmision || issuer.puntoEmision;
-    const secuencial = providedSecuencial
-      ? await this.normalizeAndValidateSecuencial(
-          issuer.id,
-          establecimiento,
-          puntoEmision,
-          providedSecuencial,
-        )
-      : await this.generateSecuencial(
-          issuer.id,
-          establecimiento,
-          puntoEmision,
-        );
-
     this.validateInvoiceTotals(createInvoiceDto);
 
     const {
@@ -864,65 +979,121 @@ export class InvoiceService {
       puntoEmision: _providedPuntoEmision,
       secuencial: _providedSecuencial,
       claveAcceso: _providedClaveAcceso,
-      autorizar: _autorizar,
       ...invoicePayload
     } = createInvoiceDto as CreateInvoiceDto & Partial<IssueInvoiceDto>;
 
-    const invoice = this.invoiceRepository.create({
-      ...invoicePayload,
-      establecimiento,
-      puntoEmision,
-      secuencial,
-      status: InvoiceStatus.DRAFT,
-      moneda: createInvoiceDto.moneda || 'DOLAR',
-      totalDescuento: createInvoiceDto.totalDescuento || 0,
-      propina: createInvoiceDto.propina || 0,
-    });
+    try {
+      const savedInvoiceId = await this.invoiceRepository.manager.transaction(
+        async (manager) => {
+          const invoiceRepository = manager.getRepository(Invoice);
+          const detailRepository = manager.getRepository(InvoiceDetail);
+          const detailTaxRepository = manager.getRepository(InvoiceDetailTax);
+          const paymentRepository = manager.getRepository(InvoicePayment);
+          const eventRepository = manager.getRepository(InvoiceEvent);
+          const issuerRepository = manager.getRepository(Issuer);
 
-    invoice.issuer = issuer;
-    invoice.claveAcceso = await this.resolveClaveAcceso(
-      invoice,
-      providedClaveAcceso,
-    );
+          const issuer = await issuerRepository.findOne({
+            where: { id: createInvoiceDto.issuerId, isActive: true },
+          });
 
-    const savedInvoice = await this.invoiceRepository.save(invoice);
+          if (!issuer) {
+            throw new NotFoundException('Emisor no encontrado');
+          }
 
-    for (const detalleDto of detalles) {
-      const { impuestos, ...detallePayload } = detalleDto;
-      const detalle = this.detailRepository.create({
-        ...detallePayload,
-        invoiceId: savedInvoice.id,
-      });
-      await this.detailRepository.save(detalle);
+          const establecimiento =
+            providedEstablecimiento || issuer.establecimiento;
+          const puntoEmision = providedPuntoEmision || issuer.puntoEmision;
+          const secuencial = providedSecuencial
+            ? await this.normalizeAndValidateSecuencial(
+                issuer.id,
+                establecimiento,
+                puntoEmision,
+                providedSecuencial,
+                manager,
+              )
+            : await this.generateSecuencial(
+                issuer.id,
+                establecimiento,
+                puntoEmision,
+                manager,
+              );
 
-      for (const impuestoDto of impuestos) {
-        const impuesto = this.detailTaxRepository.create({
-          ...impuestoDto,
-          detailId: detalle.id,
-        });
-        await this.detailTaxRepository.save(impuesto);
+          const invoice = invoiceRepository.create({
+            ...invoicePayload,
+            establecimiento,
+            puntoEmision,
+            secuencial,
+            status: InvoiceStatus.DRAFT,
+            moneda: createInvoiceDto.moneda || 'DOLAR',
+            totalDescuento: createInvoiceDto.totalDescuento || 0,
+            propina: createInvoiceDto.propina || 0,
+          });
+
+          invoice.issuer = issuer;
+          invoice.claveAcceso = await this.resolveClaveAcceso(
+            invoice,
+            providedClaveAcceso,
+            manager,
+          );
+
+          const savedInvoice = await invoiceRepository.save(invoice);
+
+          for (const detalleDto of detalles) {
+            const { impuestos, ...detallePayload } = detalleDto;
+            const detalle = detailRepository.create({
+              ...detallePayload,
+              invoiceId: savedInvoice.id,
+            });
+            await detailRepository.save(detalle);
+
+            for (const impuestoDto of impuestos) {
+              const impuesto = detailTaxRepository.create({
+                ...impuestoDto,
+                detailId: detalle.id,
+              });
+              await detailTaxRepository.save(impuesto);
+            }
+          }
+
+          for (const pagoDto of pagos) {
+            const pago = paymentRepository.create({
+              ...pagoDto,
+              invoiceId: savedInvoice.id,
+            });
+            await paymentRepository.save(pago);
+          }
+
+          const event = eventRepository.create({
+            invoiceId: savedInvoice.id,
+            type: InvoiceEventType.CREATED,
+            message: providedSecuencial
+              ? 'Factura creada con secuencial externo'
+              : 'Factura creada',
+          });
+          await eventRepository.save(event);
+
+          return savedInvoice.id;
+        },
+      );
+
+      this.logger.log(`Invoice created with ID: ${savedInvoiceId}`);
+
+      return this.findOneEntity(savedInvoiceId);
+    } catch (error: any) {
+      if (error?.code === '23505') {
+        if (String(error?.detail || '').includes('claveAcceso')) {
+          throw new BadRequestException(
+            `Ya existe una factura con la claveAcceso ${providedClaveAcceso}`,
+          );
+        }
+
+        throw new BadRequestException(
+          'Ya existe una factura con los datos fiscales enviados',
+        );
       }
+
+      throw error;
     }
-
-    for (const pagoDto of pagos) {
-      const pago = this.paymentRepository.create({
-        ...pagoDto,
-        invoiceId: savedInvoice.id,
-      });
-      await this.paymentRepository.save(pago);
-    }
-
-    await this.createEvent(
-      savedInvoice.id,
-      InvoiceEventType.CREATED,
-      providedSecuencial
-        ? 'Factura creada con secuencial externo'
-        : 'Factura creada',
-    );
-
-    this.logger.log(`Invoice created with ID: ${savedInvoice.id}`);
-
-    return this.findOneEntity(savedInvoice.id);
   }
 
   /**
@@ -1058,6 +1229,22 @@ export class InvoiceService {
       detalles: invoice.detalles,
       pagos: invoice.pagos,
       infoAdicional: invoice.infoAdicional,
+    };
+  }
+
+  private mapIssueResponseDto(invoice: Invoice): IssueInvoiceResponseDto {
+    return {
+      ...this.mapToResponseDto(invoice),
+      artifacts: {
+        signedXmlUrl:
+          invoice.status !== InvoiceStatus.DRAFT
+            ? `/invoices/${invoice.id}/artifacts/${ArtifactType.XML_SIGNED}`
+            : undefined,
+        authorizedXmlUrl:
+          invoice.status === InvoiceStatus.AUTHORIZED
+            ? `/invoices/${invoice.id}/artifacts/${ArtifactType.XML_AUTHORIZED}`
+            : undefined,
+      },
     };
   }
 }

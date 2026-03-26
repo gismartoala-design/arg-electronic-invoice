@@ -79,7 +79,7 @@ export class InvoiceResponseDto {
   retryCount: number;
 
   @ApiPropertyOptional()
-  lastError?: string;
+  lastError?: string | null;
 
   @ApiProperty()
   createdAt: Date;
