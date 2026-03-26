@@ -285,6 +285,27 @@ export class InvoiceService {
   }
 
   /**
+   * Obtener un artefacto usando la clave de acceso como llave funcional
+   */
+  async getArtifactByClaveAcceso(
+    claveAcceso: string,
+    type: ArtifactType,
+  ): Promise<{ buffer: Buffer; mimeType: string; filename: string }> {
+    const invoice = await this.invoiceRepository.findOne({
+      where: { claveAcceso },
+      select: { id: true },
+    });
+
+    if (!invoice) {
+      throw new NotFoundException(
+        `Factura con claveAcceso ${claveAcceso} no encontrada`,
+      );
+    }
+
+    return this.getArtifact(invoice.id, type);
+  }
+
+  /**
    * Firmar y enviar factura al SRI
    */
   async authorize(id: string): Promise<InvoiceResponseDto> {

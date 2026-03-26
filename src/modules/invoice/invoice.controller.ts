@@ -136,6 +136,40 @@ export class InvoiceController {
     return new StreamableFile(buffer);
   }
 
+  @Get('by-access-key/:claveAcceso/artifacts/:type')
+  @ApiOperation({
+    summary:
+      'Obtener un artefacto de la factura usando la clave de acceso como llave funcional',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Archivo descargado exitosamente',
+    content: {
+      'application/pdf': { schema: { type: 'string', format: 'binary' } },
+      'application/xml': { schema: { type: 'string', format: 'binary' } },
+      'application/json': { schema: { type: 'string', format: 'binary' } },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Factura o artefacto no encontrado',
+  })
+  async getArtifactByClaveAcceso(
+    @Param('claveAcceso') claveAcceso: string,
+    @Param('type') type: ArtifactType,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const { buffer, mimeType, filename } =
+      await this.invoiceService.getArtifactByClaveAcceso(claveAcceso, type);
+
+    res.set({
+      'Content-Type': mimeType,
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    });
+
+    return new StreamableFile(buffer);
+  }
+
   @Post(':id/authorize')
   @ApiOperation({ summary: 'Firmar y autorizar factura en el SRI' })
   @ApiResponse({
