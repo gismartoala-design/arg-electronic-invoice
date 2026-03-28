@@ -1,8 +1,19 @@
-import { IsString, Matches } from 'class-validator';
+import { IsEnum, IsString, Matches } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { CreateInvoiceDto } from './create-invoice.dto';
+import { AmbienteType } from '../entities';
 
 export class IssueInvoiceDto extends CreateInvoiceDto {
+  @ApiProperty({
+    description: 'Ambiente SRI del documento definido por el ERP/POS',
+    enum: AmbienteType,
+    example: AmbienteType.PRUEBAS,
+  })
+  @IsEnum(AmbienteType, {
+    message: 'ambiente debe ser PRUEBAS o PRODUCCION',
+  })
+  ambiente: AmbienteType;
+
   @ApiProperty({
     description:
       'Código de establecimiento definido por el ERP/POS para el documento fiscal',

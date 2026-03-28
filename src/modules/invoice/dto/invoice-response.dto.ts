@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  AmbienteType,
   InvoiceStatus,
   SriReceptionStatus,
   SriAuthorizationStatus,
@@ -23,6 +24,9 @@ export class InvoiceResponseDto {
 
   @ApiPropertyOptional()
   claveAcceso?: string;
+
+  @ApiPropertyOptional({ enum: AmbienteType })
+  ambiente?: AmbienteType;
 
   @ApiProperty()
   fechaEmision: string;
