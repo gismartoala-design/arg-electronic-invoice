@@ -10,6 +10,7 @@ import {
   Index,
 } from 'typeorm';
 import {
+  AmbienteType,
   InvoiceStatus,
   SriReceptionStatus,
   SriAuthorizationStatus,
@@ -46,6 +47,13 @@ export class Invoice {
 
   @Column({ type: 'varchar', length: 49, unique: true, nullable: true })
   claveAcceso: string;
+
+  @Column({
+    type: 'enum',
+    enum: AmbienteType,
+    nullable: true,
+  })
+  ambiente: AmbienteType | null;
 
   @Column({ type: 'varchar', length: 10 })
   fechaEmision: string; // Formato: DD/MM/YYYY

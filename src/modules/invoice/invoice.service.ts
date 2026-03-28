@@ -550,15 +550,33 @@ export class InvoiceService {
 
     const issuer = invoice.issuer;
     const expectedFecha = invoice.fechaEmision.replace(/\//g, '');
-    const expectedAmbiente =
-      issuer.ambiente === AmbienteType.PRODUCCION ? '2' : '1';
     const expectedSerie = `${invoice.establecimiento}${invoice.puntoEmision}`;
+    const hasValidSriAmbiente =
+      parsedAccessKey.ambiente === '1' || parsedAccessKey.ambiente === '2';
+
+    if (!hasValidSriAmbiente) {
+      throw new BadRequestException(
+        'La claveAcceso enviada por el cliente contiene un ambiente SRI inválido',
+      );
+    }
+
+    const requestedAmbienteCode = this.getSriAmbienteCodeFromSelection(
+      invoice.ambiente,
+    );
+
+    if (
+      requestedAmbienteCode &&
+      parsedAccessKey.ambiente !== requestedAmbienteCode
+    ) {
+      throw new BadRequestException(
+        'La claveAcceso enviada por el cliente no coincide con el ambiente solicitado',
+      );
+    }
 
     if (
       parsedAccessKey.fecha !== expectedFecha ||
       parsedAccessKey.tipoComprobante !== TipoComprobante.FACTURA ||
       parsedAccessKey.ruc !== issuer.ruc ||
-      parsedAccessKey.ambiente !== expectedAmbiente ||
       parsedAccessKey.serie !== expectedSerie ||
       parsedAccessKey.numeroComprobante !== invoice.secuencial ||
       parsedAccessKey.tipoEmision !== TipoEmision.NORMAL
@@ -588,10 +606,11 @@ export class InvoiceService {
    */
   private generateXml(invoice: Invoice): string {
     const issuer = invoice.issuer;
+    const ambiente = this.resolveSriAmbienteCode(invoice);
 
     const invoiceData = {
       issuer: {
-        ambiente: issuer.ambiente === AmbienteType.PRODUCCION ? '2' : '1',
+        ambiente,
         tipoEmision: TipoEmision.NORMAL,
         razonSocial: issuer.razonSocial,
         nombreComercial: issuer.nombreComercial || issuer.razonSocial,
@@ -624,6 +643,32 @@ export class InvoiceService {
     };
 
     return this.xmlBuilderService.buildInvoiceXml(invoiceData);
+  }
+
+  private resolveSriAmbienteCode(invoice: Invoice): '1' | '2' {
+    const requestedAmbienteCode = this.getSriAmbienteCodeFromSelection(
+      invoice.ambiente,
+    );
+
+    if (requestedAmbienteCode) {
+      return requestedAmbienteCode;
+    }
+
+    return this.getSriAmbienteCodeFromSelection(invoice.issuer.ambiente) || '1';
+  }
+
+  private getSriAmbienteCodeFromSelection(
+    ambiente?: AmbienteType | null,
+  ): '1' | '2' | null {
+    if (ambiente === AmbienteType.PRODUCCION) {
+      return '2';
+    }
+
+    if (ambiente === AmbienteType.PRUEBAS) {
+      return '1';
+    }
+
+    return null;
   }
 
   /**
@@ -975,6 +1020,7 @@ export class InvoiceService {
     const {
       detalles,
       pagos,
+      ambiente: providedAmbiente,
       establecimiento: _providedEstablecimiento,
       puntoEmision: _providedPuntoEmision,
       secuencial: _providedSecuencial,
@@ -1023,6 +1069,7 @@ export class InvoiceService {
             establecimiento,
             puntoEmision,
             secuencial,
+            ambiente: providedAmbiente || null,
             status: InvoiceStatus.DRAFT,
             moneda: createInvoiceDto.moneda || 'DOLAR',
             totalDescuento: createInvoiceDto.totalDescuento || 0,
@@ -1205,6 +1252,7 @@ export class InvoiceService {
       establecimiento: invoice.establecimiento,
       puntoEmision: invoice.puntoEmision,
       claveAcceso: invoice.claveAcceso,
+      ambiente: invoice.ambiente || undefined,
       fechaEmision: invoice.fechaEmision,
       clienteTipoIdentificacion: invoice.clienteTipoIdentificacion,
       clienteIdentificacion: invoice.clienteIdentificacion,
