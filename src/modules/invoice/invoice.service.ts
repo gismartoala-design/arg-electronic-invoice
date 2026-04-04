@@ -1280,10 +1280,16 @@ export class InvoiceService {
     };
   }
 
-  private mapIssueResponseDto(invoice: Invoice): IssueInvoiceResponseDto {
+  private async mapIssueResponseDto(
+    invoice: Invoice,
+  ): Promise<IssueInvoiceResponseDto> {
+    const issueXml = await this.getIssueResponseXml(invoice.id);
+
     return {
       ...this.mapToResponseDto(invoice),
       artifacts: {
+        xml: issueXml?.content,
+        xmlType: issueXml?.type,
         signedXmlUrl:
           invoice.status !== InvoiceStatus.DRAFT
             ? `/invoices/${invoice.id}/artifacts/${ArtifactType.XML_SIGNED}`
@@ -1294,5 +1300,35 @@ export class InvoiceService {
             : undefined,
       },
     };
+  }
+
+  private async getIssueResponseXml(
+    invoiceId: string,
+  ): Promise<{ content: string; type: ArtifactType } | null> {
+    const xmlAuthorized = await this.getArtifactContent(
+      invoiceId,
+      ArtifactType.XML_AUTHORIZED,
+    );
+
+    if (xmlAuthorized) {
+      return {
+        content: xmlAuthorized,
+        type: ArtifactType.XML_AUTHORIZED,
+      };
+    }
+
+    const xmlSigned = await this.getArtifactContent(
+      invoiceId,
+      ArtifactType.XML_SIGNED,
+    );
+
+    if (xmlSigned) {
+      return {
+        content: xmlSigned,
+        type: ArtifactType.XML_SIGNED,
+      };
+    }
+
+    return null;
   }
 }

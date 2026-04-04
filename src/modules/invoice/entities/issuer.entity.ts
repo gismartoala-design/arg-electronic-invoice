@@ -14,7 +14,7 @@ export class Issuer {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'varchar', length: 13, unique: true })
+  @Column({ type: 'varchar', length: 13 })
   ruc: string;
 
   @Column({ type: 'varchar', length: 300 })
